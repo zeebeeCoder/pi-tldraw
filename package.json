@@ -1,0 +1,36 @@
+{
+  "name": "pi-tldraw-mcp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Pi extension that opens and persists a local tldraw MCP canvas.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "mcp",
+    "mcp-app",
+    "tldraw"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
