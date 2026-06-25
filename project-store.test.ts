@@ -13,7 +13,7 @@ import {
 let dirs: string[] = []
 
 async function tempProject() {
-	const dir = await mkdtemp(join(tmpdir(), 'pi-tldraw-mcp-'))
+	const dir = await mkdtemp(join(tmpdir(), 'pi-tldraw-'))
 	dirs.push(dir)
 	return dir
 }

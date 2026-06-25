@@ -1,4 +1,4 @@
-# pi-tldraw-mcp
+# pi-tldraw
 
 A Pi extension that opens a local tldraw MCP canvas, lets the agent inspect/edit it, and persists canvas snapshots per project folder.
 
@@ -7,7 +7,7 @@ A Pi extension that opens a local tldraw MCP canvas, lets the agent inspect/edit
 This is a testable Pi extension package:
 
 ```text
-pi-tldraw-mcp/
+pi-tldraw/
 ├── index.ts                 # Pi extension entry point
 ├── local-host.ts            # Local browser host + MCP AppBridge bridge
 ├── server-manager.ts        # Local tldraw MCP server lifecycle
@@ -31,9 +31,9 @@ Pi discovers the extension via:
 ## Install for local use
 
 ```bash
-cd ~/code/opti/pi-tldraw-mcp
+cd ~/code/opti/pi-tldraw
 npm install
-ln -sfn ~/code/opti/pi-tldraw-mcp ~/.pi/agent/extensions/pi-tldraw-mcp
+ln -sfn ~/code/opti/pi-tldraw ~/.pi/agent/extensions/pi-tldraw
 ```
 
 Then restart Pi or run:
@@ -65,7 +65,7 @@ For this development machine, the fallback path is the local tldraw checkout. Fo
 Start or restore the current project canvas:
 
 ```text
-/tldraw-mcp open
+/tldraw open
 ```
 
 Then work in the browser canvas. Edits are autosaved into the current project folder:
@@ -80,14 +80,14 @@ You should not need a manual save during normal use.
 ## Useful commands
 
 ```text
-/tldraw-mcp open [canvasId]      # Open/restore canvas; creates one if needed
-/tldraw-mcp host                 # Show host/server/autosave diagnostics
-/tldraw-mcp canvases             # List saved project canvases
-/tldraw-mcp current              # Show current project canvas id
-/tldraw-mcp restart              # Restart local MCP app server
-/tldraw-mcp save                 # Manual checkpoint; refuses unsafe blank overwrite
-/tldraw-mcp save!                # Force manual empty overwrite
-/tldraw-mcp reset                # Reset MCP HTTP session
+/tldraw open [canvasId]      # Open/restore canvas; creates one if needed
+/tldraw host                 # Show host/server/autosave diagnostics
+/tldraw canvases             # List saved project canvases
+/tldraw current              # Show current project canvas id
+/tldraw restart              # Restart local MCP app server
+/tldraw save                 # Manual checkpoint; refuses unsafe blank overwrite
+/tldraw save!                # Force manual empty overwrite
+/tldraw reset                # Reset MCP HTTP session
 ```
 
 ## Agent tools
@@ -95,8 +95,8 @@ You should not need a manual save during normal use.
 - `tldraw_canvas_open` — open/restore the local browser canvas host.
 - `tldraw_canvas_state` — inspect live canvas state and optionally save it.
 - `tldraw_canvas_exec` — execute JavaScript against the live tldraw editor.
-- `tldraw_mcp_search` — inspect the tldraw Editor API via the MCP search tool.
-- `tldraw_mcp_status` — check MCP server tools/resources.
+- `tldraw_search` — inspect the tldraw Editor API via the MCP search tool.
+- `tldraw_status` — check MCP server tools/resources.
 
 ## Persistence model
 
@@ -106,12 +106,12 @@ The durable source of truth is project-local JSON:
 <project>/.pi/tldraw-canvases/<canvasId>.json
 ```
 
-The MCP server checkpoint store is treated as transient runtime state. If the browser port, MCP session, or Wrangler state changes, `/tldraw-mcp open` restores from the project snapshot.
+The MCP server checkpoint store is treated as transient runtime state. If the browser port, MCP session, or Wrangler state changes, `/tldraw open` restores from the project snapshot.
 
 Safety rules:
 
 - Autosave and manual save refuse to overwrite a non-empty saved snapshot with an empty live canvas.
-- Forced empty overwrite is available with `/tldraw-mcp save!`.
+- Forced empty overwrite is available with `/tldraw save!`.
 - Previous snapshots are copied to `.pi/tldraw-canvases/history/<canvasId>/` before overwrite.
 
 ## Development

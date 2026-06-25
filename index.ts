@@ -60,7 +60,7 @@ class TldrawMcpClient {
 				params: {
 					protocolVersion: MCP_PROTOCOL_VERSION,
 					capabilities: {},
-					clientInfo: { name: 'pi-tldraw-mcp', version: '0.0.1' },
+					clientInfo: { name: 'pi-tldraw', version: '0.0.1' },
 				},
 			},
 			signal
@@ -294,7 +294,7 @@ export default function (pi: ExtensionAPI) {
 		const hostStatus = canvasHost.getStatus()
 		if (!hostStatus.browserConnected) {
 			throw new Error(
-				`No live browser canvas is connected. Open the canvas tab with /tldraw-mcp open, wait for "Canvas ready", then save again. Host: ${hostStatus.url ?? 'not started'}`
+				`No live browser canvas is connected. Open the canvas tab with /tldraw open, wait for "Canvas ready", then save again. Host: ${hostStatus.url ?? 'not started'}`
 			)
 		}
 		const result: any = await canvasHost.execOnCanvas(
@@ -320,7 +320,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerTool({
-		name: 'tldraw_mcp_status',
+		name: 'tldraw_status',
 		label: 'tldraw MCP Status',
 		description:
 			'Check the configured tldraw MCP server, list exposed MCP tools, and report whether the canvas app resource is available.',
@@ -347,13 +347,13 @@ export default function (pi: ExtensionAPI) {
 	})
 
 	pi.registerTool({
-		name: 'tldraw_mcp_search',
+		name: 'tldraw_search',
 		label: 'tldraw MCP Search',
 		description:
 			'Call the tldraw MCP search tool. This is read-only and works without rendering the canvas widget.',
 		promptSnippet: 'Search the tldraw Editor API exposed by the local tldraw MCP server.',
 		promptGuidelines: [
-			'Use tldraw_mcp_search to inspect tldraw Editor APIs before proposing canvas execution code.',
+			'Use tldraw_search to inspect tldraw Editor APIs before proposing canvas execution code.',
 		],
 		parameters: Type.Object({
 			code: Type.String({
@@ -371,7 +371,7 @@ export default function (pi: ExtensionAPI) {
 	})
 
 	pi.registerTool({
-		name: 'tldraw_mcp_read_canvas_resource',
+		name: 'tldraw_read_canvas_resource',
 		label: 'Read tldraw MCP Canvas Resource',
 		description:
 			'Read metadata for the tldraw MCP canvas app resource. This proves the artifact HTML is exposed, but Pi does not render MCP app iframes yet.',
@@ -530,7 +530,7 @@ export default function (pi: ExtensionAPI) {
 			await serverManager.ensure(signal)
 			const started = params.open === true ? await canvasHost.open(signal) : await canvasHost.ensureStarted(signal)
 			if (!canvasHost.getStatus().browserConnected) {
-				throw new Error('No live browser canvas is connected. Use /tldraw-mcp open first, wait for Canvas ready, then inspect/save.')
+				throw new Error('No live browser canvas is connected. Use /tldraw open first, wait for Canvas ready, then inspect/save.')
 			}
 			const canvasId = await resolveCanvasId(cwd, params.canvasId)
 			const result: any = await canvasHost.execOnCanvas(
@@ -574,7 +574,7 @@ export default function (pi: ExtensionAPI) {
 	})
 
 	pi.registerTool({
-		name: 'tldraw_mcp_call_readonly_tool',
+		name: 'tldraw_call_readonly_tool',
 		label: 'Call read-only tldraw MCP tool',
 		description:
 			'Experimental curated MCP bridge: call a non-app-only, non-exec tldraw MCP tool by name. Blocks exec and app-only checkpoint/callback tools.',
@@ -600,8 +600,8 @@ export default function (pi: ExtensionAPI) {
 		},
 	})
 
-	pi.registerCommand('tldraw-mcp', {
-		description: 'Inspect/control tldraw MCP (/tldraw-mcp status|start|restart|tools|resource|open [canvasId]|save|canvases|current|host|reset).',
+	pi.registerCommand('tldraw', {
+		description: 'Inspect/control tldraw MCP (/tldraw status|start|restart|tools|resource|open [canvasId]|save|canvases|current|host|reset).',
 		handler: async (args, ctx) => {
 			const parts = args.trim().split(/\s+/).filter(Boolean)
 			const action = parts[0] || 'status'
@@ -616,7 +616,7 @@ export default function (pi: ExtensionAPI) {
 				}
 				if (normalizedAction === 'current') {
 					const current = await getStoredCurrentCanvasId(ctx.cwd)
-					ctx.ui.setWidget('tldraw-mcp-current', [
+					ctx.ui.setWidget('tldraw-current', [
 						'tldraw current canvas:',
 						`cwd: ${ctx.cwd}`,
 						`canvasId: ${sessionCanvasId ?? current ?? 'none'}`,
@@ -626,7 +626,7 @@ export default function (pi: ExtensionAPI) {
 				}
 				if (normalizedAction === 'canvases') {
 					const canvases = await listCanvasSnapshots(ctx.cwd)
-					ctx.ui.setWidget('tldraw-mcp-canvases', [
+					ctx.ui.setWidget('tldraw-canvases', [
 						`tldraw project canvases (${canvases.length}):`,
 						`store: ${getCanvasDir(ctx.cwd)}`,
 						...canvases.map(
@@ -637,43 +637,43 @@ export default function (pi: ExtensionAPI) {
 					return
 				}
 				if (normalizedAction === 'save') {
-					ctx.ui.setStatus('tldraw-mcp', 'tldraw MCP: saving canvas')
+					ctx.ui.setStatus('tldraw', 'tldraw MCP: saving canvas')
 					await serverManager.ensure(ctx.signal)
 					const status = canvasHost.getStatus()
 					if (!status.url) {
-						throw new Error('Canvas host is not started. Use /tldraw-mcp open first, make edits, then /tldraw-mcp save.')
+						throw new Error('Canvas host is not started. Use /tldraw open first, make edits, then /tldraw save.')
 					}
 					if (!status.browserConnected) {
-						throw new Error(`No live browser canvas is connected at ${status.url}. Reopen with /tldraw-mcp open before saving.`)
+						throw new Error(`No live browser canvas is connected at ${status.url}. Reopen with /tldraw open before saving.`)
 					}
 					const canvasId = await resolveCanvasId(ctx.cwd, argCanvasId)
 					const snapshot = await snapshotLiveCanvas(ctx.cwd, canvasId, ctx.signal, { allowEmptyOverwrite: force })
 					ctx.ui.notify(`Saved ${snapshot.canvasId} (${summarizeSnapshot(snapshot)})`, 'info')
-					ctx.ui.setStatus('tldraw-mcp', `tldraw MCP: saved ${snapshot.canvasId}`)
+					ctx.ui.setStatus('tldraw', `tldraw MCP: saved ${snapshot.canvasId}`)
 					return
 				}
 				if (normalizedAction === 'start') {
-					ctx.ui.setStatus('tldraw-mcp', 'tldraw MCP: starting')
+					ctx.ui.setStatus('tldraw', 'tldraw MCP: starting')
 					await serverManager.start(ctx.signal)
 					ctx.ui.notify(`tldraw MCP server reachable at ${endpoint}`, 'info')
-					ctx.ui.setStatus('tldraw-mcp', 'tldraw MCP: started')
+					ctx.ui.setStatus('tldraw', 'tldraw MCP: started')
 					return
 				}
 				if (normalizedAction === 'restart') {
-					ctx.ui.setStatus('tldraw-mcp', 'tldraw MCP: restarting')
+					ctx.ui.setStatus('tldraw', 'tldraw MCP: restarting')
 					client.reset()
 					await serverManager.restart(ctx.signal)
 					ctx.ui.notify(`tldraw MCP server restarted at ${endpoint}`, 'info')
-					ctx.ui.setStatus('tldraw-mcp', 'tldraw MCP: restarted')
+					ctx.ui.setStatus('tldraw', 'tldraw MCP: restarted')
 					return
 				}
 				if (normalizedAction === 'tools') {
 					const tools = await client.listTools(ctx.signal)
-					ctx.ui.setWidget('tldraw-mcp', ['tldraw MCP tools:', ...compactToolList(tools)])
+					ctx.ui.setWidget('tldraw', ['tldraw MCP tools:', ...compactToolList(tools)])
 					return
 				}
 				if (normalizedAction === 'open') {
-					ctx.ui.setStatus('tldraw-mcp', 'tldraw MCP: ensuring server')
+					ctx.ui.setStatus('tldraw', 'tldraw MCP: ensuring server')
 					await serverManager.ensure(ctx.signal)
 					const { url } = await canvasHost.open(ctx.signal)
 					let canvasId = await resolveCanvasId(ctx.cwd, argCanvasId)
@@ -696,13 +696,13 @@ export default function (pi: ExtensionAPI) {
 						restoreText = ` Started new project canvas ${canvasId}. Autosave is on.`
 					}
 					ctx.ui.notify(`Opened tldraw canvas host: ${url}.${restoreText}`, 'info')
-					ctx.ui.setStatus('tldraw-mcp', `canvas host: ${url}`)
+					ctx.ui.setStatus('tldraw', `canvas host: ${url}`)
 					return
 				}
 				if (normalizedAction === 'host') {
 					const status = canvasHost.getStatus()
 					const server = serverManager.getStatus()
-					ctx.ui.setWidget('tldraw-mcp-host', [
+					ctx.ui.setWidget('tldraw-host', [
 						'tldraw canvas host:',
 						`url: ${status.url ?? 'not started'}`,
 						`browser connected: ${status.browserConnected ? 'yes' : 'no'}`,
@@ -731,10 +731,10 @@ export default function (pi: ExtensionAPI) {
 					client.listResources(ctx.signal),
 				])
 				const server = serverManager.getStatus()
-				ctx.ui.setStatus('tldraw-mcp', `tldraw MCP: ${tools.length} tools, ${resources.length} resources`)
+				ctx.ui.setStatus('tldraw', `tldraw MCP: ${tools.length} tools, ${resources.length} resources`)
 				ctx.ui.notify(`tldraw MCP OK at ${endpoint}${server.managedPid ? ` (pid ${server.managedPid})` : ''}`, 'info')
 			} catch (error) {
-				ctx.ui.setStatus('tldraw-mcp', 'tldraw MCP: error')
+				ctx.ui.setStatus('tldraw', 'tldraw MCP: error')
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), 'error')
 			}
 		},
@@ -745,7 +745,7 @@ export default function (pi: ExtensionAPI) {
 		sessionCanvasId = await getStoredCurrentCanvasId(ctx.cwd)
 		if (ctx.hasUI) {
 			ctx.ui.setStatus(
-				'tldraw-mcp',
+				'tldraw',
 				sessionCanvasId ? `tldraw MCP: lazy · canvas ${sessionCanvasId}` : 'tldraw MCP: lazy'
 			)
 		}
