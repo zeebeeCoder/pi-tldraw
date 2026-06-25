@@ -26,7 +26,22 @@ npm pkg set bugs.url=https://github.com/<github-owner>/pi-tldraw/issues
 npm pkg set homepage=https://github.com/<github-owner>/pi-tldraw#readme
 ```
 
-### 2. Verify locally
+### 2. Review package metadata
+
+Before publishing, confirm these fields are final:
+
+- `name`
+- `version`
+- `description`
+- `license`
+- `author`
+- `contributors`
+- `repository`
+- `bugs`
+- `homepage`
+- `keywords` includes `pi-package`
+
+### 3. Verify locally
 
 ```bash
 npm ci
@@ -37,7 +52,7 @@ pi -e .
 
 Confirm `npm pack --dry-run` contains only package files, not `.pi/`, `node_modules/`, or local canvas snapshots.
 
-### 3. Choose runtime MCP server strategy
+### 4. Choose runtime MCP server strategy
 
 `pi-tldraw` needs the tldraw MCP app/server reachable at `http://127.0.0.1:8787/mcp` by default.
 
@@ -52,7 +67,7 @@ If using an external checkout locally:
 export TLDRAW_MCP_APP_DIR=/path/to/tldraw/apps/mcp-app
 ```
 
-### 4. Publish to npm
+### 5. Publish to npm
 
 `pi-tldraw` was available on npm when checked locally. Re-check before publishing:
 
@@ -73,7 +88,7 @@ If you rename to a scoped package, publish public:
 npm publish --access public
 ```
 
-### 5. Optional: GitHub trusted publishing
+### 6. Optional: GitHub trusted publishing
 
 The included `.github/workflows/publish.yml` can publish on GitHub Release. To use it without an npm token:
 

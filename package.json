@@ -4,6 +4,18 @@
   "type": "module",
   "description": "Pi extension that opens and persists a local tldraw MCP canvas.",
   "license": "MIT",
+  "author": {
+    "name": "Zeebee Siwiec",
+    "email": "byniutek@gmail.com",
+    "url": "https://github.com/zeebeeCoder"
+  },
+  "contributors": [
+    {
+      "name": "Zeebee Siwiec",
+      "email": "byniutek@gmail.com",
+      "url": "https://github.com/zeebeeCoder"
+    }
+  ],
   "keywords": [
     "pi-package",
     "pi",
