@@ -230,6 +230,94 @@ try {
 return { shapes, assets, bindings }
 `
 
+// A complete spatial read of the canvas: every shape with full geometry,
+// selection state, and a layout analysis (rows, proportions, adjacency,
+// arrow connections). This gives Pi the same "glance at the canvas" view
+// the user has — sizes, positions, hierarchy, what's connected to what —
+// in a single call, without blind probing.
+const READ_CANVAS_SCENE_CODE = `
+const allShapes = editor.getCurrentPageShapes()
+const selectedIds = new Set(editor.getSelectedShapeIds())
+
+// Build a spatial model for every non-arrow shape
+const nodes = allShapes
+  .filter((s) => s._type !== 'arrow')
+  .map((s) => {
+    const w = typeof s.w === 'number' ? s.w : 0
+    const h = typeof s.h === 'number' ? s.h : 0
+    return {
+      id: s.shapeId,
+      type: s._type,
+      text: (s.text ?? '').trim(),
+      color: s.color ?? null,
+      x: Math.round(s.x),
+      y: Math.round(s.y),
+      w: Math.round(w),
+      h: Math.round(h),
+      area: Math.round(w * h),
+      selected: selectedIds.has(s.shapeId),
+    }
+  })
+
+// Arrows describe connections
+const arrows = allShapes
+  .filter((s) => s._type === 'arrow')
+  .map((s) => ({
+    id: s.shapeId,
+    text: (s.text ?? '').trim(),
+    fromId: s.fromId ?? null,
+    toId: s.toId ?? null,
+    color: s.color ?? null,
+  }))
+
+// Group nodes into rows by y-band (80px tolerance)
+const rows = {}
+for (const n of nodes) {
+  const band = Math.round(n.y / 80) * 80
+  if (!rows[band]) rows[band] = []
+  rows[band].push(n)
+}
+const rowSummary = Object.entries(rows)
+  .sort(([a], [b]) => Number(a) - Number(b))
+  .map(([y, shapes]) => {
+    shapes.sort((a, b) => a.x - b.x)
+    const rowArea = shapes.reduce((sum, s) => sum + s.area, 0)
+    return {
+      y: Number(y),
+      shapeCount: shapes.length,
+      shapes: shapes.map((s) => ({
+        text: s.text || s.type,
+        w: s.w,
+        h: s.h,
+        ratio: rowArea > 0 ? Math.round((s.area / rowArea) * 100) + '%' : '?',
+        selected: s.selected,
+      })),
+    }
+  })
+
+// Total area for overall proportion
+const totalArea = nodes.reduce((sum, s) => sum + s.area, 0)
+
+// Selected shapes summary
+const selectedNodes = nodes.filter((s) => s.selected)
+
+return {
+  shapeCount: allShapes.length,
+  nodeCount: nodes.length,
+  arrowCount: arrows.length,
+  selectedCount: selectedNodes.length,
+  selected: selectedNodes.map((s) => ({ text: s.text || s.type, type: s.type, w: s.w, h: s.h, x: s.x, y: s.y, color: s.color })),
+  arrows,
+  totalArea,
+  layout: rowSummary,
+  nodes: nodes.sort((a, b) => b.area - a.area).map((s) => ({
+    id: s.id, text: s.text || s.type, type: s.type, x: s.x, y: s.y, w: s.w, h: s.h, area: s.area,
+    ratio: totalArea > 0 ? Math.round((s.area / totalArea) * 100) + '%' : '?',
+    color: s.color, selected: s.selected,
+  })),
+}
+`
+
 function createProjectCanvasId() {
 	return randomUUID().replace(/-/g, '').slice(0, 8)
 }
@@ -596,6 +684,43 @@ export default function (pi: ExtensionAPI) {
 					},
 				],
 				details: { endpoint, host: canvasHost.getStatus(), canvasId: returnedCanvasId, state },
+			}
+		},
+	})
+
+	pi.registerTool({
+		name: 'tldraw_canvas_scene',
+		label: 'Read tldraw Canvas Scene',
+		description:
+			'Read the complete spatial layout of the visible tldraw canvas: every shape with geometry (x, y, w, h, area), selection state, arrow connections, and a row-by-row layout analysis with size proportions. This is the "glance at the canvas" view — use it first before responding to what the user sees or draws.',
+		promptSnippet: 'See the full spatial layout of the canvas — sizes, positions, hierarchy, selection, connections — in one read.',
+		promptGuidelines: [
+			'Use tldraw_canvas_scene as the FIRST call when the user asks you to look at, respond to, or build on what they have drawn.',
+			'It returns every shape with x/y/w/h/area, which shapes are selected, arrow connections, and a row layout with size ratios — everything needed to understand the diagram spatially.',
+		],
+		parameters: Type.Object({
+			open: Type.Optional(
+				Type.Boolean({ description: 'Whether to open/focus the browser host before reading. Defaults to false (reuse connected browser).' })
+			),
+		}),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const cwd = ctx?.cwd ?? sessionCwd
+			await serverManager.ensure(signal)
+			const started = params.open === true ? await ensureBrowserAndRestore(cwd, undefined, signal) : await canvasHost.ensureStarted(signal)
+			if (!canvasHost.getStatus().browserConnected) {
+				throw new Error('No live browser canvas is connected. Use /tldraw open or pass open: true, wait for Canvas ready, then read the scene.')
+			}
+			const canvasId = await resolveCanvasId(cwd)
+			const result: any = await canvasHost.execOnCanvas(
+				{ code: READ_CANVAS_SCENE_CODE, canvasId },
+				signal
+			)
+			const returnedCanvasId = parseCanvasIdFromResult(result) ?? canvasId
+			const scene = extractReturnValue(result)
+			if (returnedCanvasId) await rememberCanvasId(cwd, returnedCanvasId)
+			return {
+				content: [{ type: 'text', text: JSON.stringify(scene, null, 2) }],
+				details: { endpoint, host: canvasHost.getStatus(), canvasId: returnedCanvasId, scene },
 			}
 		},
 	})
