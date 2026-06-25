@@ -285,6 +285,46 @@ export default function (pi: ExtensionAPI) {
 		await setStoredCurrentCanvasId(cwd, canvasId)
 	}
 
+	/**
+	 * Open the browser host if needed and restore the project snapshot into a
+	 * freshly spawned (blank) window. If a browser is already connected, the
+	 * live canvas is left untouched so the user's in-progress edits survive —
+	 * this is what makes pair diagramming work: Pi and the user share one canvas.
+	 */
+	async function ensureBrowserAndRestore(
+		cwd: string,
+		canvasId: string | undefined,
+		signal?: AbortSignal,
+		opts: { restore?: boolean } = {}
+	) {
+		const { url, spawned } = await canvasHost.open(signal)
+		let resolvedId = await resolveCanvasId(cwd, canvasId)
+		let restoreText = spawned
+			? 'No project canvas restored.'
+			: 'Browser already open; live canvas unchanged.'
+		// Only restore when we just spawned a fresh (blank) browser window.
+		if (spawned && opts.restore !== false) {
+			if (!resolvedId) resolvedId = createProjectCanvasId()
+			const snapshot = await loadCanvasSnapshot(cwd, resolvedId)
+			if (snapshot) {
+				await canvasHost.execOnCanvas(
+					{ code: restoreCanvasCode(snapshot), canvasId: snapshot.canvasId },
+					signal
+				)
+				await rememberCanvasId(cwd, snapshot.canvasId)
+				restoreText = `Restored project canvas ${snapshot.canvasId} (${summarizeSnapshot(snapshot)}). Autosave is on.`
+			} else {
+				await canvasHost.execOnCanvas(
+					{ code: INITIALIZE_CANVAS_CODE, canvasId: resolvedId },
+					signal
+				)
+				await rememberCanvasId(cwd, resolvedId)
+				restoreText = `Started new project canvas ${resolvedId}. Autosave is on.`
+			}
+		}
+		return { url, spawned, resolvedId, restoreText }
+	}
+
 	async function snapshotLiveCanvas(
 		cwd: string,
 		canvasId: string | undefined,
@@ -408,35 +448,9 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const cwd = ctx?.cwd ?? sessionCwd
 			await serverManager.ensure(signal)
-			const { url } = await canvasHost.open(signal)
-			let requestedCanvasId = await resolveCanvasId(cwd, params.canvasId)
-			let restoreText = 'No project canvas restored.'
-			if (params.restore !== false && requestedCanvasId) {
-				const snapshot = await loadCanvasSnapshot(cwd, requestedCanvasId)
-				if (snapshot) {
-					await canvasHost.execOnCanvas(
-						{ code: restoreCanvasCode(snapshot), canvasId: snapshot.canvasId },
-						signal
-					)
-					await rememberCanvasId(cwd, snapshot.canvasId)
-					restoreText = `Restored project canvas ${snapshot.canvasId} (${summarizeSnapshot(snapshot)}). Autosave is on.`
-				} else {
-					await canvasHost.execOnCanvas(
-						{ code: INITIALIZE_CANVAS_CODE, canvasId: requestedCanvasId },
-						signal
-					)
-					await rememberCanvasId(cwd, requestedCanvasId)
-					restoreText = `Started new project canvas ${requestedCanvasId}. Autosave is on.`
-				}
-			} else if (!requestedCanvasId) {
-				requestedCanvasId = createProjectCanvasId()
-				await canvasHost.execOnCanvas(
-					{ code: INITIALIZE_CANVAS_CODE, canvasId: requestedCanvasId },
-					signal
-				)
-				await rememberCanvasId(cwd, requestedCanvasId)
-				restoreText = `Started new project canvas ${requestedCanvasId}. Autosave is on.`
-			}
+			const { url, restoreText } = await ensureBrowserAndRestore(cwd, params.canvasId, signal, {
+				restore: params.restore !== false,
+			})
 			return {
 				content: [
 					{
@@ -475,8 +489,16 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const cwd = ctx?.cwd ?? sessionCwd
 			await serverManager.ensure(signal)
-			const started = params.open === false ? await canvasHost.ensureStarted(signal) : await canvasHost.open(signal)
-			const canvasId = await resolveCanvasId(cwd, params.canvasId)
+			let started: { url: string | null; port?: number | null; spawned?: boolean }
+			let canvasId: string | undefined
+			if (params.open === false) {
+				started = await canvasHost.ensureStarted(signal)
+				canvasId = await resolveCanvasId(cwd, params.canvasId)
+			} else {
+				const opened = await ensureBrowserAndRestore(cwd, params.canvasId, signal)
+				started = opened
+				canvasId = opened.resolvedId
+			}
 			const result = await canvasHost.execOnCanvas(
 				{ code: params.code, canvasId },
 				signal
@@ -528,7 +550,12 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const cwd = ctx?.cwd ?? sessionCwd
 			await serverManager.ensure(signal)
-			const started = params.open === true ? await canvasHost.open(signal) : await canvasHost.ensureStarted(signal)
+			let started: { url: string | null; port?: number | null; spawned?: boolean }
+			if (params.open === true) {
+				started = await ensureBrowserAndRestore(cwd, params.canvasId, signal)
+			} else {
+				started = await canvasHost.ensureStarted(signal)
+			}
 			if (!canvasHost.getStatus().browserConnected) {
 				throw new Error('No live browser canvas is connected. Use /tldraw open first, wait for Canvas ready, then inspect/save.')
 			}
@@ -675,27 +702,8 @@ export default function (pi: ExtensionAPI) {
 				if (normalizedAction === 'open') {
 					ctx.ui.setStatus('tldraw', 'tldraw MCP: ensuring server')
 					await serverManager.ensure(ctx.signal)
-					const { url } = await canvasHost.open(ctx.signal)
-					let canvasId = await resolveCanvasId(ctx.cwd, argCanvasId)
-					let restoreText = ''
-					if (canvasId) {
-						const snapshot = await loadCanvasSnapshot(ctx.cwd, canvasId)
-						if (snapshot) {
-							await canvasHost.execOnCanvas({ code: restoreCanvasCode(snapshot), canvasId }, ctx.signal)
-							await rememberCanvasId(ctx.cwd, canvasId)
-							restoreText = ` Restored ${canvasId}. Autosave is on.`
-						} else {
-							await canvasHost.execOnCanvas({ code: INITIALIZE_CANVAS_CODE, canvasId }, ctx.signal)
-							await rememberCanvasId(ctx.cwd, canvasId)
-							restoreText = ` Started new project canvas ${canvasId}. Autosave is on.`
-						}
-					} else {
-						canvasId = createProjectCanvasId()
-						await canvasHost.execOnCanvas({ code: INITIALIZE_CANVAS_CODE, canvasId }, ctx.signal)
-						await rememberCanvasId(ctx.cwd, canvasId)
-						restoreText = ` Started new project canvas ${canvasId}. Autosave is on.`
-					}
-					ctx.ui.notify(`Opened tldraw canvas host: ${url}.${restoreText}`, 'info')
+					const { url, restoreText } = await ensureBrowserAndRestore(ctx.cwd, argCanvasId, ctx.signal)
+					ctx.ui.notify(`Opened tldraw canvas host: ${url}. ${restoreText}`, 'info')
 					ctx.ui.setStatus('tldraw', `canvas host: ${url}`)
 					return
 				}

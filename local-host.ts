@@ -60,8 +60,12 @@ export function createCanvasHost(
 
 	async function open(signal?: AbortSignal) {
 		const started = await ensureStarted(signal)
+		// If a browser is already actively polling, reuse it instead of spawning
+		// another tab. This keeps pair diagramming on one shared canvas and
+		// prevents blank duplicate windows from appearing on repeated calls.
+		if (Date.now() - lastPollAt < 3000) return { ...started, spawned: false }
 		await pi.exec('open', [started.url], { signal, timeout: 5000 }).catch(() => undefined)
-		return started
+		return { ...started, spawned: true }
 	}
 
 	async function execOnCanvas(input: { code: string; canvasId?: string; timeoutMs?: number }, signal?: AbortSignal) {
