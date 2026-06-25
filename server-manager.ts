@@ -11,7 +11,7 @@ export function createMcpServerManager(endpoint: string) {
 	let lastError: string | null = null
 	const logs: string[] = []
 
-	const appDir = process.env.TLDRAW_MCP_APP_DIR || resolveDefaultAppDir()
+	const appDir = resolveAppDir()
 	const autoStart = process.env.TLDRAW_MCP_AUTO_START !== 'false' && isLocalEndpoint(endpoint)
 
 	async function ensure(signal?: AbortSignal) {
@@ -145,9 +145,11 @@ function isLocalEndpoint(endpoint: string) {
 	}
 }
 
-function resolveDefaultAppDir() {
+function resolveAppDir() {
+	if (process.env.TLDRAW_MCP_APP_DIR) return process.env.TLDRAW_MCP_APP_DIR
 	const packagedAppDir = fileURLToPath(new URL('./mcp-app', import.meta.url))
 	if (existsSync(packagedAppDir)) return packagedAppDir
+	// Fall back to the dev app directory for local development.
 	return DEV_APP_DIR
 }
 
