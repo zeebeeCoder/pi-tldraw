@@ -231,15 +231,16 @@ return { shapes, assets, bindings }
 `
 
 // A complete spatial read of the canvas: every shape with full geometry,
-// selection state, and a layout analysis (rows, proportions, adjacency,
-// arrow connections). This gives Pi the same "glance at the canvas" view
-// the user has — sizes, positions, hierarchy, what's connected to what —
-// in a single call, without blind probing.
+// selection state, and deterministic layout computations — containment,
+// adjacency, connection graph, reading order, alignment. This gives Pi the
+// same "glance at the canvas" view the user has: sizes, positions, hierarchy,
+// nesting, what's next to what, what's connected to what — computed from
+// semantic geometry, not pixels.
 const READ_CANVAS_SCENE_CODE = `
 const allShapes = editor.getCurrentPageShapes()
 const selectedIds = new Set(editor.getSelectedShapeIds())
 
-// Build a spatial model for every non-arrow shape
+// --- Nodes: non-arrow shapes with full geometry ---
 const nodes = allShapes
   .filter((s) => s._type !== 'arrow')
   .map((s) => {
@@ -255,11 +256,14 @@ const nodes = allShapes
       w: Math.round(w),
       h: Math.round(h),
       area: Math.round(w * h),
+      cx: Math.round(s.x + w / 2),
+      cy: Math.round(s.y + h / 2),
       selected: selectedIds.has(s.shapeId),
+      hasBounds: w > 0 && h > 0,
     }
   })
 
-// Arrows describe connections
+// --- Arrows → connection graph ---
 const arrows = allShapes
   .filter((s) => s._type === 'arrow')
   .map((s) => ({
@@ -269,8 +273,84 @@ const arrows = allShapes
     toId: s.toId ?? null,
     color: s.color ?? null,
   }))
+const outEdges = {}
+const inEdges = {}
+for (const a of arrows) {
+  if (a.fromId) { outEdges[a.fromId] = outEdges[a.fromId] || []; outEdges[a.fromId].push(a.toId) }
+  if (a.toId) { inEdges[a.toId] = inEdges[a.toId] || []; inEdges[a.toId].push(a.fromId) }
+}
+const connections = nodes.map((n) => ({
+  id: n.id,
+  text: n.text || n.type,
+  outgoing: (outEdges[n.id] || []).map((id) => nodes.find((m) => m.id === id)?.text || id),
+  incoming: (inEdges[n.id] || []).map((id) => nodes.find((m) => m.id === id)?.text || id),
+})).filter((c) => c.outgoing.length || c.incoming.length)
 
-// Group nodes into rows by y-band (80px tolerance)
+// --- Containment: which shape visually contains which ---
+// Uses bounds overlap, not group children, so it works for frames/groups/containers
+const bounded = nodes.filter((n) => n.hasBounds)
+const containment = []
+for (const a of bounded) {
+  for (const b of bounded) {
+    if (a.id === b.id) continue
+    if (b.x >= a.x && b.y >= a.y && b.x + b.w <= a.x + a.w && b.y + b.h <= a.y + a.h && a.area > b.area) {
+      containment.push({ container: a.text || a.type, contained: b.text || b.type, containerId: a.id, containedId: b.id })
+    }
+  }
+}
+
+// --- Adjacency: nearest neighbor in each cardinal direction ---
+function yOverlap(a, b) { return Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) }
+function xOverlap(a, b) { return Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) }
+const adjacency = {}
+for (const n of bounded) {
+  adjacency[n.id] = { text: n.text || n.type }
+  for (const m of bounded) {
+    if (n.id === m.id) continue
+    // right: m starts after n ends, y-overlapping
+    if (m.x >= n.x + n.w && yOverlap(n, m) > 0) {
+      const d = m.x - (n.x + n.w)
+      if (!adjacency[n.id].right || d < adjacency[n.id].right.dist)
+        adjacency[n.id].right = { text: m.text || m.type, dist: Math.round(d) }
+    }
+    // left
+    if (m.x + m.w <= n.x && yOverlap(n, m) > 0) {
+      const d = n.x - (m.x + m.w)
+      if (!adjacency[n.id].left || d < adjacency[n.id].left.dist)
+        adjacency[n.id].left = { text: m.text || m.type, dist: Math.round(d) }
+    }
+    // below
+    if (m.y >= n.y + n.h && xOverlap(n, m) > 0) {
+      const d = m.y - (n.y + n.h)
+      if (!adjacency[n.id].below || d < adjacency[n.id].below.dist)
+        adjacency[n.id].below = { text: m.text || m.type, dist: Math.round(d) }
+    }
+    // above
+    if (m.y + m.h <= n.y && xOverlap(n, m) > 0) {
+      const d = n.y - (m.y + m.h)
+      if (!adjacency[n.id].above || d < adjacency[n.id].above.dist)
+        adjacency[n.id].above = { text: m.text || m.type, dist: Math.round(d) }
+    }
+  }
+}
+
+// --- Reading order: spatial sort (top-to-bottom, left-to-right within rows) ---
+const readingOrder = [...bounded].sort((a, b) => a.y - b.y || a.x - b.x).map((n) => n.text || n.type)
+
+// --- Alignment: shapes sharing x (columns) or y (rows), within 10px tolerance ---
+function groupBy(val, map) {
+  const groups = {}
+  for (const n of bounded) {
+    const key = Math.round(val(n) / 10) * 10
+    groups[key] = groups[key] || []
+    groups[key].push(n.text || n.type)
+  }
+  return Object.entries(groups).filter(([, v]) => v.length > 1).map(([k, v]) => ({ at: Number(k), shapes: v }))
+}
+const columns = groupBy((n) => n.x, 'x')
+const rowsAligned = groupBy((n) => n.y, 'y')
+
+// --- Row layout with proportions (y-band grouping, 80px tolerance) ---
 const rows = {}
 for (const n of nodes) {
   const band = Math.round(n.y / 80) * 80
@@ -286,20 +366,25 @@ const rowSummary = Object.entries(rows)
       y: Number(y),
       shapeCount: shapes.length,
       shapes: shapes.map((s) => ({
-        text: s.text || s.type,
-        w: s.w,
-        h: s.h,
+        text: s.text || s.type, w: s.w, h: s.h,
         ratio: rowArea > 0 ? Math.round((s.area / rowArea) * 100) + '%' : '?',
         selected: s.selected,
       })),
     }
   })
 
-// Total area for overall proportion
-const totalArea = nodes.reduce((sum, s) => sum + s.area, 0)
-
-// Selected shapes summary
+// --- Selection bounding box ---
 const selectedNodes = nodes.filter((s) => s.selected)
+let selectionBounds = null
+if (selectedNodes.length) {
+  const minX = Math.min(...selectedNodes.map((s) => s.x))
+  const minY = Math.min(...selectedNodes.map((s) => s.y))
+  const maxX = Math.max(...selectedNodes.map((s) => s.x + s.w))
+  const maxY = Math.max(...selectedNodes.map((s) => s.y + s.h))
+  selectionBounds = { x: minX, y: minY, w: Math.round(maxX - minX), h: Math.round(maxY - minY) }
+}
+
+const totalArea = nodes.reduce((sum, s) => sum + s.area, 0)
 
 return {
   shapeCount: allShapes.length,
@@ -307,7 +392,14 @@ return {
   arrowCount: arrows.length,
   selectedCount: selectedNodes.length,
   selected: selectedNodes.map((s) => ({ text: s.text || s.type, type: s.type, w: s.w, h: s.h, x: s.x, y: s.y, color: s.color })),
+  selectionBounds,
   arrows,
+  connections,
+  containment,
+  adjacency: Object.values(adjacency),
+  readingOrder,
+  alignedColumns: columns,
+  alignedRows: rowsAligned,
   totalArea,
   layout: rowSummary,
   nodes: nodes.sort((a, b) => b.area - a.area).map((s) => ({
