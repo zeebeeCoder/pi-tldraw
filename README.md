@@ -2,6 +2,57 @@
 
 A Pi extension that opens a local tldraw MCP canvas, lets the agent inspect/edit it, and persists canvas snapshots per project folder.
 
+## Install
+
+From npm:
+
+```bash
+pi install npm:pi-tldraw
+```
+
+Pinned:
+
+```bash
+pi install npm:pi-tldraw@0.1.0
+```
+
+Before the npm package is published, you can install from GitHub after a repo/tag exists:
+
+```bash
+pi install git:github.com/<github-owner>/pi-tldraw@v0.1.0
+```
+
+Or quick-run a local checkout without installing:
+
+```bash
+pi -e .
+```
+
+## Runtime requirement: tldraw MCP app
+
+The extension talks to a tldraw MCP server at:
+
+```text
+http://127.0.0.1:8787/mcp
+```
+
+If that endpoint is not reachable, the extension tries to auto-start a local tldraw MCP app when the endpoint is local. Auto-start uses:
+
+1. `TLDRAW_MCP_APP_DIR`, if set.
+2. `./mcp-app` next to this package's `index.ts`, if present.
+
+For a development checkout of tldraw:
+
+```bash
+export TLDRAW_MCP_APP_DIR=/path/to/tldraw/apps/mcp-app
+```
+
+If you prefer to run the MCP server yourself, start it separately and disable auto-start:
+
+```bash
+export TLDRAW_MCP_AUTO_START=false
+```
+
 ## Extension shape
 
 This is a testable Pi extension package:
@@ -15,6 +66,7 @@ pi-tldraw/
 ├── project-store.test.ts    # Unit tests for persistence behavior
 ├── static/app-bridge-bundle.js
 ├── package.json             # Pi package metadata
+├── PUBLISHING.md            # Maintainer publishing checklist
 └── tsconfig.json
 ```
 
@@ -27,38 +79,6 @@ Pi discovers the extension via:
   }
 }
 ```
-
-## Install for local use
-
-```bash
-cd ~/code/opti/pi-tldraw
-npm install
-ln -sfn ~/code/opti/pi-tldraw ~/.pi/agent/extensions/pi-tldraw
-```
-
-Then restart Pi or run:
-
-```text
-/reload
-```
-
-## MCP server lifecycle
-
-The extension talks to a tldraw MCP server at:
-
-```text
-http://127.0.0.1:8787/mcp
-```
-
-If that endpoint is not reachable, the extension tries to auto-start a local tldraw MCP app.
-
-Configure the MCP app source with:
-
-```bash
-export TLDRAW_MCP_APP_DIR=/path/to/tldraw/apps/mcp-app
-```
-
-For this development machine, the fallback path is the local tldraw checkout. For a packaged release, put an `mcp-app/` directory next to `index.ts` or set `TLDRAW_MCP_APP_DIR`.
 
 ## Normal UX
 
@@ -117,9 +137,22 @@ Safety rules:
 ## Development
 
 ```bash
-npm test
-npm run typecheck
+npm install
 npm run check
+npm run pack:dry
 ```
 
 Keep logic that does not need Pi APIs in separate modules, such as `project-store.ts`, so it can be unit-tested without mocking Pi.
+
+## Publishing
+
+See [PUBLISHING.md](./PUBLISHING.md). The short version:
+
+```bash
+npm run check
+npm pack --dry-run
+npm login
+npm publish
+```
+
+The package includes the `pi-package` keyword so it can be discovered by the Pi package gallery after npm publication.

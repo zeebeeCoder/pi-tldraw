@@ -2,8 +2,6 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const DEV_APP_DIR = '/Users/zbigniewsiwiec/code/github/tldraw/apps/mcp-app'
-
 export function createMcpServerManager(endpoint: string) {
 	let proc: ChildProcess | null = null
 	let starting: Promise<void> | null = null
@@ -147,10 +145,7 @@ function isLocalEndpoint(endpoint: string) {
 
 function resolveAppDir() {
 	if (process.env.TLDRAW_MCP_APP_DIR) return process.env.TLDRAW_MCP_APP_DIR
-	const packagedAppDir = fileURLToPath(new URL('./mcp-app', import.meta.url))
-	if (existsSync(packagedAppDir)) return packagedAppDir
-	// Fall back to the dev app directory for local development.
-	return DEV_APP_DIR
+	return fileURLToPath(new URL('./mcp-app', import.meta.url))
 }
 
 function delay(ms: number) {

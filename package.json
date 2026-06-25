@@ -1,9 +1,9 @@
 {
   "name": "pi-tldraw",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "description": "Pi extension that opens and persists a local tldraw MCP canvas.",
+  "license": "MIT",
   "keywords": [
     "pi-package",
     "pi",
@@ -12,6 +12,20 @@
     "mcp-app",
     "tldraw"
   ],
+  "files": [
+    "index.ts",
+    "local-host.ts",
+    "server-manager.ts",
+    "project-store.ts",
+    "static/",
+    "mcp-app/",
+    "README.md",
+    "PUBLISHING.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "pi": {
     "extensions": [
       "./index.ts"
@@ -20,17 +34,26 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test"
-  },
-  "dependencies": {
-    "typebox": "*"
+    "check": "npm run typecheck && npm test",
+    "pack:dry": "npm pack --dry-run",
+    "prepublishOnly": "npm run check"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "typebox": "*",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
-  }
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/zeebeeCoder/pi-tldraw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zeebeeCoder/pi-tldraw/issues"
+  },
+  "homepage": "https://github.com/zeebeeCoder/pi-tldraw#readme"
 }
