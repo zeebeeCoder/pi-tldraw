@@ -719,13 +719,21 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: 'Draw or update a visible tldraw canvas through the local browser bridge.',
 		promptGuidelines: [
 			'Use tldraw_canvas_exec when the user asks to create a visible tldraw diagram from Pi.',
-			'Use focused shape objects with editor.createShape({ _type, shapeId, x, y, w, h, text, color, fill }) in tldraw_canvas_exec code.',
-			'Use createArrowBetweenShapes(fromId, toId, { text }) in tldraw_canvas_exec code to connect diagram boxes.',
+			'Shapes use the FOCUSED format with _type — NOT tldraw\'s internal types. Valid _type values: rectangle, ellipse, triangle, diamond, hexagon, pill, cloud, x-box, check-box, heart, pentagon, octagon, star, parallelogram-right, parallelogram-left, fat-arrow-right, fat-arrow-left, fat-arrow-up, fat-arrow-down, arrow, note, text, line, draw.',
+			'DO NOT use _type: "geo" — that is tldraw\'s internal type name. Use _type: "rectangle" instead.',
+			'Create shapes: editor.createShape({ _type: \'rectangle\', shapeId: \'box1\', x: 100, y: 100, w: 240, h: 120, text: \'Label\', color: \'blue\', fill: \'tint\' }).',
+			'Connect shapes: createArrowBetweenShapes(\'box1\', \'box2\', { text: \'label\' }) — pass shape IDs as strings, not shape objects.',
+			'Group shapes: boxShapes([\'box1\', \'box2\'], { text: \'Group label\', color: \'blue\' }) — pass shape IDs as strings.',
+			'Available colors: black, grey, light-grey, red, orange, yellow, green, blue, light-blue, violet, light-violet.',
+			'Available fills: none, tint, solid.',
+			'Shape IDs must be unique strings. Reuse an ID to update an existing shape.',
+			'Read shapes: const shapes = editor.getCurrentPageShapes() — returns focused shapes with _type, shapeId, text, x, y, w, h, color.',
+			'Note: note shapes auto-size and do NOT have w/h. Use editor.getShapePageBounds(shapeId) for bounds if needed (but this method may return the editor object via the proxy — prefer reading w/h from focused shapes for geo shapes).',
 		],
 		parameters: Type.Object({
 			code: Type.String({
 				description:
-					'JavaScript code to run in the tldraw MCP app iframe. It has editor and helpers like createArrowBetweenShapes and boxShapes.',
+					'JavaScript code to run in the tldraw MCP app iframe. It has access to `editor` (focused proxy — use _type not type), `createArrowBetweenShapes(fromId, toId, opts)`, and `boxShapes(ids, opts)`. Use _type: "rectangle" not "geo".',
 			}),
 			canvasId: Type.Optional(
 				Type.String({ description: 'Canvas ID returned by an earlier tldraw MCP exec result.' })
