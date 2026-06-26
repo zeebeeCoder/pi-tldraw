@@ -516,6 +516,19 @@ function hostHtml() {
 					try {
 						const result = await runExec(client, task)
 						await fetch('/api/result', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: task.id, ok: true, result }) })
+						// If the exec returned an error, the iframe's editor is now in a
+						// broken state (error banner, editor disposed, never remounts).
+						// Reload the host page to get a fresh iframe. The canvas state is
+						// preserved — the next exec passes canvasId and the mcp-app
+						// restores shapes from the server via _get_canvas_state.
+						// This keeps the extension self-contained: no upstream patch needed.
+						if (result?.isError) {
+							log('status', 'Exec error, reloading host to recover...')
+							setStatus('Recovering from error...')
+							await delay(300)
+							window.location.reload()
+							return
+						}
 					} catch (error) {
 						await bridge?.sendToolCancelled?.({ reason: String(error?.message ?? error) }).catch(() => {})
 						await fetch('/api/result', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: task.id, ok: false, error: String(error?.message ?? error) }) })
