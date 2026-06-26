@@ -443,33 +443,68 @@ export default function (pi: ExtensionAPI) {
 	const client = new TldrawMcpClient(endpoint, serverManager.ensure)
 	let sessionCwd = process.cwd()
 	let sessionCanvasId: string | undefined
-	let sessionShapeCount = 0
 
 	type TldrawPhase = 'idle' | 'starting' | 'ready' | 'connected' | 'working' | 'error' | 'disconnected'
 
-	function updateStatus(ctx: { hasUI: boolean; ui: ExtensionAPI['events'] extends never ? never : any }, phase: TldrawPhase) {
-		if (!ctx.hasUI) return
+	let statusCtx: { hasUI: boolean; ui: any } | null = null
+	let spinnerTimer: ReturnType<typeof setInterval> | null = null
+	let spinnerPhase = 0
+	// Pulsing-dot frames — grows from dim to bright, matching the ● connected icon.
+	const SPINNER_FRAMES: Array<{ char: string; color: string }> = [
+		{ char: '·', color: 'dim' },
+		{ char: '•', color: 'muted' },
+		{ char: '●', color: 'accent' },
+		{ char: '•', color: 'muted' },
+	]
+
+	function renderStatus(phase: TldrawPhase) {
+		if (!statusCtx?.hasUI) return
 		const iconColor =
 			phase === 'error' ? 'error' :
-			phase === 'connected' || phase === 'working' ? 'success' :
+			phase === 'connected' ? 'success' :
 			phase === 'disconnected' ? 'warning' :
-			phase === 'idle' ? 'accent' : 'accent'
+			'accent'
 		const icon =
-			phase === 'connected' || phase === 'working' ? '●' :
+			phase === 'connected' ? '●' :
 			phase === 'disconnected' ? '○' :
 			phase === 'error' ? '✗' :
 			'•'
-		const suffix = phase === 'working' || phase === 'starting' ? ctx.ui.theme.fg('dim', ' …') : ''
-		const countLabel = (phase === 'connected' || phase === 'working') && sessionShapeCount > 0
-			? ctx.ui.theme.fg('muted', ' ' + sessionShapeCount)
-			: ''
-		ctx.ui.setStatus(
+		statusCtx.ui.setStatus(
 			'tldraw',
-			ctx.ui.theme.fg(iconColor, icon) +
-				ctx.ui.theme.fg('muted', ' tldraw') +
-				countLabel +
-				suffix
+			statusCtx.ui.theme.fg(iconColor, icon) +
+				statusCtx.ui.theme.fg('muted', ' tldraw')
 		)
+	}
+
+	function renderSpinnerFrame() {
+		if (!statusCtx?.hasUI) return
+		const frame = SPINNER_FRAMES[spinnerPhase % SPINNER_FRAMES.length]
+		statusCtx.ui.setStatus(
+			'tldraw',
+			statusCtx.ui.theme.fg(frame.color, frame.char) +
+				statusCtx.ui.theme.fg('muted', ' tldraw')
+		)
+		spinnerPhase++
+	}
+
+	function startSpinner() {
+		if (spinnerTimer) return
+		spinnerPhase = 0
+		spinnerTimer = setInterval(renderSpinnerFrame, 120)
+	}
+
+	function stopSpinner() {
+		if (spinnerTimer) { clearInterval(spinnerTimer); spinnerTimer = null }
+	}
+
+	function updateStatus(ctx: { hasUI: boolean; ui: any }, phase: TldrawPhase) {
+		statusCtx = ctx
+		if (phase === 'working' || phase === 'starting') {
+			startSpinner()
+		} else {
+			stopSpinner()
+			renderStatus(phase)
+		}
 	}
 	const canvasHost = createCanvasHost(pi, endpoint, CANVAS_RESOURCE_URI, {
 		async onAutoSave({
@@ -479,7 +514,6 @@ export default function (pi: ExtensionAPI) {
 			canvasId: string
 			state: { shapes?: unknown[]; assets?: unknown[]; bindings?: unknown[] }
 		}) {
-			sessionShapeCount = Array.isArray(state.shapes) ? state.shapes.length : sessionShapeCount
 			const saved = await saveCanvasSnapshot(sessionCwd, canvasId, state)
 			await rememberCanvasId(sessionCwd, saved.canvasId)
 		},
@@ -523,7 +557,6 @@ export default function (pi: ExtensionAPI) {
 					{ code: restoreCanvasCode(snapshot), canvasId: snapshot.canvasId },
 					signal
 				)
-				sessionShapeCount = snapshot.shapeCount ?? 0
 				await rememberCanvasId(cwd, snapshot.canvasId)
 				restoreText = `Restored project canvas ${snapshot.canvasId} (${summarizeSnapshot(snapshot)}). Autosave is on.`
 			} else {
@@ -1011,14 +1044,11 @@ export default function (pi: ExtensionAPI) {
 	pi.on('session_start', async (_event, ctx) => {
 		sessionCwd = ctx.cwd
 		sessionCanvasId = await getStoredCurrentCanvasId(ctx.cwd)
-		if (sessionCanvasId) {
-			const snap = await loadCanvasSnapshot(sessionCwd, sessionCanvasId)
-			sessionShapeCount = snap?.shapeCount ?? 0
-		}
 		updateStatus(ctx, 'idle')
 	})
 
 	pi.on('session_shutdown', async () => {
+		stopSpinner()
 		client.reset()
 		await canvasHost.close()
 		await serverManager.stop()
