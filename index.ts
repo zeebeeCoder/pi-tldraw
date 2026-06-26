@@ -454,6 +454,9 @@ export default function (pi: ExtensionAPI) {
 			const saved = await saveCanvasSnapshot(sessionCwd, canvasId, state)
 			await rememberCanvasId(sessionCwd, saved.canvasId)
 		},
+		async onRestore(canvasId: string) {
+			return loadCanvasSnapshot(sessionCwd, canvasId)
+		},
 	})
 
 	async function resolveCanvasId(cwd: string, explicitCanvasId?: string) {

@@ -23,6 +23,7 @@ interface CanvasHostOptions {
 		state: { shapes?: unknown[]; assets?: unknown[]; bindings?: unknown[] }
 		source?: string
 	}): Promise<void>
+	onRestore?(canvasId: string): Promise<{ shapes: unknown[]; assets?: unknown[]; bindings?: unknown[] } | null>
 }
 
 export function createCanvasHost(
@@ -192,6 +193,24 @@ export function createCanvasHost(
 					return sendJson(res, { ok: false, error: message }, 409)
 				}
 			}
+			if (req.method === 'GET' && reqUrl.pathname === '/api/restore') {
+				const restoreCanvasId = reqUrl.searchParams.get('canvasId')
+				if (!restoreCanvasId) return sendJson(res, { ok: false, error: 'Missing canvasId' }, 400)
+				if (!opts.onRestore) return sendJson(res, { ok: false, error: 'No restore handler' }, 501)
+				try {
+					const snapshot = await opts.onRestore(restoreCanvasId)
+					if (!snapshot) {
+						appendLog(`restore ${restoreCanvasId}: no saved snapshot`)
+						return sendJson(res, { ok: false, error: 'No saved snapshot' }, 404)
+					}
+					appendLog(`restore ${restoreCanvasId}: ${Array.isArray(snapshot.shapes) ? snapshot.shapes.length : 0} shape(s)`)
+					return sendJson(res, { ok: true, snapshot })
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error)
+					appendLog(`restore ${restoreCanvasId}: error ${message}`)
+					return sendJson(res, { ok: false, error: message }, 500)
+				}
+			}
 			if (req.method === 'POST' && reqUrl.pathname === '/api/result') {
 				const body = (await readJson(req)) as { id?: string; ok?: boolean; result?: unknown; error?: string }
 				if (!body.id) return sendJson(res, { ok: false, error: 'Missing id' }, 400)
@@ -273,6 +292,9 @@ function hostHtml() {
 		let bridge = null
 		let ready = false
 		let lastCanvasId = null
+		// Persist canvasId across reloads so we can restore after error recovery.
+		try { lastCanvasId = sessionStorage.getItem('pi-tldraw-canvasId') } catch {}
+		let needsRestore = lastCanvasId !== null
 		// Start inline so the later fullscreen update is a real context change.
 		// The tldraw MCP app initializes its React state to inline and only switches
 		// when it receives an onhostcontextchanged notification.
@@ -503,13 +525,49 @@ function hostHtml() {
 
 			const text = result?.content?.find?.((c) => c.type === 'text')?.text
 			const match = typeof text === 'string' ? text.match(/Canvas ID: ([^\s]+)/) : null
-			if (match) lastCanvasId = match[1]
+			if (match) {
+				lastCanvasId = match[1]
+				try { sessionStorage.setItem('pi-tldraw-canvasId', lastCanvasId) } catch {}
+			}
 			setStatus('Canvas ready' + (lastCanvasId ? ' · ' + lastCanvasId : ''))
 			return result
 		}
 
 		async function pollLoop(client) {
 			while (true) {
+				// After a reload (error recovery), restore the saved canvas before
+				// processing any exec tasks. The iframe is fresh and empty; the
+				// server state was cleared by the error. We pull the saved snapshot
+				// from the extension's project store and push it into the iframe.
+				if (needsRestore && lastCanvasId) {
+					needsRestore = false
+					try {
+						await waitReady()
+						const resp = await fetch('/api/restore?canvasId=' + encodeURIComponent(lastCanvasId))
+						const data = await resp.json()
+						if (data.ok && data.snapshot?.shapes?.length > 0) {
+							const restoreCode = 'const snapshotShapes = ' + JSON.stringify(data.snapshot.shapes) + '\n' +
+								'const currentIds = editor.getCurrentPageShapes().map(s => s.shapeId ?? s.id).filter(Boolean)\n' +
+								'if (currentIds.length) editor.deleteShapes(currentIds)\n' +
+								'const nonArrows = snapshotShapes.filter(s => (s._type ?? s.type) !== \'arrow\')\n' +
+								'const arrows = snapshotShapes.filter(s => (s._type ?? s.type) === \'arrow\')\n' +
+								'for (const s of nonArrows) editor.createShape(s)\n' +
+								'for (const s of arrows) editor.createShape(s)\n' +
+								'return { restored: snapshotShapes.length }'
+							const restoreArgs = { code: restoreCode, canvasId: lastCanvasId }
+							const restorePromise = client.request('tools/call', { name: 'exec', arguments: restoreArgs })
+							await delay(200)
+							await bridge.sendToolInput({ arguments: restoreArgs })
+							await restorePromise
+							log('status', 'Restored ' + data.snapshot.shapes.length + ' shape(s) after reload')
+							setStatus('Canvas restored · ' + lastCanvasId)
+						} else {
+							log('status', 'No saved snapshot to restore after reload')
+						}
+					} catch (err) {
+						log('error', 'Restore after reload failed: ' + String(err?.message ?? err))
+					}
+				}
 				try {
 					const task = await (await fetch('/api/next')).json()
 					if (!task) { await delay(500); continue }
