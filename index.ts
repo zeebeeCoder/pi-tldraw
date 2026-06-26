@@ -443,6 +443,34 @@ export default function (pi: ExtensionAPI) {
 	const client = new TldrawMcpClient(endpoint, serverManager.ensure)
 	let sessionCwd = process.cwd()
 	let sessionCanvasId: string | undefined
+	let sessionShapeCount = 0
+
+	type TldrawPhase = 'idle' | 'starting' | 'ready' | 'connected' | 'working' | 'error' | 'disconnected'
+
+	function updateStatus(ctx: { hasUI: boolean; ui: ExtensionAPI['events'] extends never ? never : any }, phase: TldrawPhase) {
+		if (!ctx.hasUI) return
+		const iconColor =
+			phase === 'error' ? 'error' :
+			phase === 'connected' || phase === 'working' ? 'success' :
+			phase === 'disconnected' ? 'warning' :
+			phase === 'idle' ? 'accent' : 'accent'
+		const icon =
+			phase === 'connected' || phase === 'working' ? '●' :
+			phase === 'disconnected' ? '○' :
+			phase === 'error' ? '✗' :
+			'•'
+		const suffix = phase === 'working' || phase === 'starting' ? ctx.ui.theme.fg('dim', ' …') : ''
+		const countLabel = (phase === 'connected' || phase === 'working') && sessionShapeCount > 0
+			? ctx.ui.theme.fg('muted', ' ' + sessionShapeCount)
+			: ''
+		ctx.ui.setStatus(
+			'tldraw',
+			ctx.ui.theme.fg(iconColor, icon) +
+				ctx.ui.theme.fg('muted', ' tldraw') +
+				countLabel +
+				suffix
+		)
+	}
 	const canvasHost = createCanvasHost(pi, endpoint, CANVAS_RESOURCE_URI, {
 		async onAutoSave({
 			canvasId,
@@ -451,6 +479,7 @@ export default function (pi: ExtensionAPI) {
 			canvasId: string
 			state: { shapes?: unknown[]; assets?: unknown[]; bindings?: unknown[] }
 		}) {
+			sessionShapeCount = Array.isArray(state.shapes) ? state.shapes.length : sessionShapeCount
 			const saved = await saveCanvasSnapshot(sessionCwd, canvasId, state)
 			await rememberCanvasId(sessionCwd, saved.canvasId)
 		},
@@ -494,6 +523,7 @@ export default function (pi: ExtensionAPI) {
 					{ code: restoreCanvasCode(snapshot), canvasId: snapshot.canvasId },
 					signal
 				)
+				sessionShapeCount = snapshot.shapeCount ?? 0
 				await rememberCanvasId(cwd, snapshot.canvasId)
 				restoreText = `Restored project canvas ${snapshot.canvasId} (${summarizeSnapshot(snapshot)}). Autosave is on.`
 			} else {
@@ -884,7 +914,8 @@ export default function (pi: ExtensionAPI) {
 					return
 				}
 				if (normalizedAction === 'save') {
-					ctx.ui.setStatus('tldraw', 'tldraw MCP: saving canvas')
+					ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, 'working')
 					await serverManager.ensure(ctx.signal)
 					const status = canvasHost.getStatus()
 					if (!status.url) {
@@ -896,22 +927,27 @@ export default function (pi: ExtensionAPI) {
 					const canvasId = await resolveCanvasId(ctx.cwd, argCanvasId)
 					const snapshot = await snapshotLiveCanvas(ctx.cwd, canvasId, ctx.signal, { allowEmptyOverwrite: force })
 					ctx.ui.notify(`Saved ${snapshot.canvasId} (${summarizeSnapshot(snapshot)})`, 'info')
-					ctx.ui.setStatus('tldraw', `tldraw MCP: saved ${snapshot.canvasId}`)
+					ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, canvasHost.getStatus().browserConnected ? 'connected' : 'ready')
 					return
 				}
 				if (normalizedAction === 'start') {
-					ctx.ui.setStatus('tldraw', 'tldraw MCP: starting')
+					ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, 'starting')
 					await serverManager.start(ctx.signal)
 					ctx.ui.notify(`tldraw MCP server reachable at ${endpoint}`, 'info')
-					ctx.ui.setStatus('tldraw', 'tldraw MCP: started')
+					ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, 'ready')
 					return
 				}
 				if (normalizedAction === 'restart') {
-					ctx.ui.setStatus('tldraw', 'tldraw MCP: restarting')
+					ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, 'starting')
 					client.reset()
 					await serverManager.restart(ctx.signal)
 					ctx.ui.notify(`tldraw MCP server restarted at ${endpoint}`, 'info')
-					ctx.ui.setStatus('tldraw', 'tldraw MCP: restarted')
+					ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, 'ready')
 					return
 				}
 				if (normalizedAction === 'tools') {
@@ -920,11 +956,13 @@ export default function (pi: ExtensionAPI) {
 					return
 				}
 				if (normalizedAction === 'open') {
-					ctx.ui.setStatus('tldraw', 'tldraw MCP: ensuring server')
+					ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, 'starting')
 					await serverManager.ensure(ctx.signal)
 					const { url, restoreText } = await ensureBrowserAndRestore(ctx.cwd, argCanvasId, ctx.signal)
 					ctx.ui.notify(`Opened tldraw canvas host: ${url}. ${restoreText}`, 'info')
-					ctx.ui.setStatus('tldraw', `canvas host: ${url}`)
+					ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, canvasHost.getStatus().browserConnected ? 'connected' : 'ready')
 					return
 				}
 				if (normalizedAction === 'host') {
@@ -959,10 +997,12 @@ export default function (pi: ExtensionAPI) {
 					client.listResources(ctx.signal),
 				])
 				const server = serverManager.getStatus()
-				ctx.ui.setStatus('tldraw', `tldraw MCP: ${tools.length} tools, ${resources.length} resources`)
+				ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, 'ready')
 				ctx.ui.notify(`tldraw MCP OK at ${endpoint}${server.managedPid ? ` (pid ${server.managedPid})` : ''}`, 'info')
 			} catch (error) {
-				ctx.ui.setStatus('tldraw', 'tldraw MCP: error')
+				ctx.ui.setStatus('tldraw', undefined)
+				updateStatus(ctx, 'error')
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), 'error')
 			}
 		},
@@ -971,12 +1011,11 @@ export default function (pi: ExtensionAPI) {
 	pi.on('session_start', async (_event, ctx) => {
 		sessionCwd = ctx.cwd
 		sessionCanvasId = await getStoredCurrentCanvasId(ctx.cwd)
-		if (ctx.hasUI) {
-			ctx.ui.setStatus(
-				'tldraw',
-				sessionCanvasId ? `tldraw MCP: lazy · canvas ${sessionCanvasId}` : 'tldraw MCP: lazy'
-			)
+		if (sessionCanvasId) {
+			const snap = await loadCanvasSnapshot(sessionCwd, sessionCanvasId)
+			sessionShapeCount = snap?.shapeCount ?? 0
 		}
+		updateStatus(ctx, 'idle')
 	})
 
 	pi.on('session_shutdown', async () => {
