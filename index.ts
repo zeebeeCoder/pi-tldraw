@@ -449,13 +449,13 @@ export default function (pi: ExtensionAPI) {
 	let statusCtx: { hasUI: boolean; ui: any } | null = null
 	let spinnerTimer: ReturnType<typeof setInterval> | null = null
 	let spinnerPhase = 0
-	// Pulsing-dot frames — grows from dim to bright, matching the ● connected icon.
-	const SPINNER_FRAMES: Array<{ char: string; color: string }> = [
-		{ char: '·', color: 'dim' },
-		{ char: '•', color: 'muted' },
-		{ char: '●', color: 'accent' },
-		{ char: '•', color: 'muted' },
-	]
+	// Braille snake spinner — the classic indeterminate-progress frames.
+	const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+	// Left divider segments this widget's status from neighbors in the bar.
+	function divider() {
+		return statusCtx!.ui.theme.fg('dim', '│ ')
+	}
 
 	function renderStatus(phase: TldrawPhase) {
 		if (!statusCtx?.hasUI) return
@@ -471,7 +471,8 @@ export default function (pi: ExtensionAPI) {
 			'•'
 		statusCtx.ui.setStatus(
 			'tldraw',
-			statusCtx.ui.theme.fg(iconColor, icon) +
+			divider() +
+				statusCtx.ui.theme.fg(iconColor, icon) +
 				statusCtx.ui.theme.fg('muted', ' tldraw')
 		)
 	}
@@ -481,7 +482,8 @@ export default function (pi: ExtensionAPI) {
 		const frame = SPINNER_FRAMES[spinnerPhase % SPINNER_FRAMES.length]
 		statusCtx.ui.setStatus(
 			'tldraw',
-			statusCtx.ui.theme.fg(frame.color, frame.char) +
+			divider() +
+				statusCtx.ui.theme.fg('accent', frame) +
 				statusCtx.ui.theme.fg('muted', ' tldraw')
 		)
 		spinnerPhase++
