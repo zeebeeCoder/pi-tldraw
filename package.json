@@ -29,6 +29,7 @@
     "local-host.ts",
     "server-manager.ts",
     "project-store.ts",
+    "semantic-layer.ts",
     "static/",
     "mcp-app/",
     "README.md",

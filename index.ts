@@ -11,6 +11,14 @@ import {
 	setCurrentCanvasId as setStoredCurrentCanvasId,
 } from './project-store'
 import { createMcpServerManager } from './server-manager'
+import {
+	buildTensor,
+	chooseAperture,
+	renderOverview,
+	renderSummary,
+	type Aperture,
+	type CanvasBundle,
+} from './semantic-layer'
 
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8787/mcp'
 const MCP_PROTOCOL_VERSION = '2025-06-18'
@@ -227,194 +235,58 @@ try {
 } catch {
 	bindings = []
 }
-return { shapes, assets, bindings }
+let selectedIds = []
+try { selectedIds = (editor.getSelectedShapeIds() || []).map((id) => String(id)) } catch { selectedIds = [] }
+return { shapes, assets, bindings, selectedIds }
 `
 
-// A complete spatial read of the canvas: every shape with full geometry,
-// selection state, and deterministic layout computations — containment,
-// adjacency, connection graph, reading order, alignment. This gives Pi the
-// same "glance at the canvas" view the user has: sizes, positions, hierarchy,
-// nesting, what's next to what, what's connected to what — computed from
-// semantic geometry, not pixels.
-const READ_CANVAS_SCENE_CODE = `
-const allShapes = editor.getCurrentPageShapes()
-const selectedIds = new Set(editor.getSelectedShapeIds())
-
-// --- Nodes: non-arrow shapes with full geometry ---
-const nodes = allShapes
-  .filter((s) => s._type !== 'arrow')
-  .map((s) => {
-    const w = typeof s.w === 'number' ? s.w : 0
-    const h = typeof s.h === 'number' ? s.h : 0
-    return {
-      id: s.shapeId,
-      type: s._type,
-      text: (s.text ?? '').trim(),
-      color: s.color ?? null,
-      x: Math.round(s.x),
-      y: Math.round(s.y),
-      w: Math.round(w),
-      h: Math.round(h),
-      area: Math.round(w * h),
-      cx: Math.round(s.x + w / 2),
-      cy: Math.round(s.y + h / 2),
-      selected: selectedIds.has(s.shapeId),
-      hasBounds: w > 0 && h > 0,
-    }
-  })
-
-// --- Arrows → connection graph ---
-const arrows = allShapes
-  .filter((s) => s._type === 'arrow')
-  .map((s) => ({
-    id: s.shapeId,
-    text: (s.text ?? '').trim(),
-    fromId: s.fromId ?? null,
-    toId: s.toId ?? null,
-    color: s.color ?? null,
-  }))
-const outEdges = {}
-const inEdges = {}
-for (const a of arrows) {
-  if (a.fromId) { outEdges[a.fromId] = outEdges[a.fromId] || []; outEdges[a.fromId].push(a.toId) }
-  if (a.toId) { inEdges[a.toId] = inEdges[a.toId] || []; inEdges[a.toId].push(a.fromId) }
-}
-const connections = nodes.map((n) => ({
-  id: n.id,
-  text: n.text || n.type,
-  outgoing: (outEdges[n.id] || []).map((id) => nodes.find((m) => m.id === id)?.text || id),
-  incoming: (inEdges[n.id] || []).map((id) => nodes.find((m) => m.id === id)?.text || id),
-})).filter((c) => c.outgoing.length || c.incoming.length)
-
-// --- Containment: which shape visually contains which ---
-// Uses bounds overlap, not group children, so it works for frames/groups/containers
-const bounded = nodes.filter((n) => n.hasBounds)
-const containment = []
-for (const a of bounded) {
-  for (const b of bounded) {
-    if (a.id === b.id) continue
-    if (b.x >= a.x && b.y >= a.y && b.x + b.w <= a.x + a.w && b.y + b.h <= a.y + a.h && a.area > b.area) {
-      containment.push({ container: a.text || a.type, contained: b.text || b.type, containerId: a.id, containedId: b.id })
-    }
-  }
-}
-
-// --- Adjacency: nearest neighbor in each cardinal direction ---
-function yOverlap(a, b) { return Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) }
-function xOverlap(a, b) { return Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) }
-const adjacency = {}
-for (const n of bounded) {
-  adjacency[n.id] = { text: n.text || n.type }
-  for (const m of bounded) {
-    if (n.id === m.id) continue
-    // right: m starts after n ends, y-overlapping
-    if (m.x >= n.x + n.w && yOverlap(n, m) > 0) {
-      const d = m.x - (n.x + n.w)
-      if (!adjacency[n.id].right || d < adjacency[n.id].right.dist)
-        adjacency[n.id].right = { text: m.text || m.type, dist: Math.round(d) }
-    }
-    // left
-    if (m.x + m.w <= n.x && yOverlap(n, m) > 0) {
-      const d = n.x - (m.x + m.w)
-      if (!adjacency[n.id].left || d < adjacency[n.id].left.dist)
-        adjacency[n.id].left = { text: m.text || m.type, dist: Math.round(d) }
-    }
-    // below
-    if (m.y >= n.y + n.h && xOverlap(n, m) > 0) {
-      const d = m.y - (n.y + n.h)
-      if (!adjacency[n.id].below || d < adjacency[n.id].below.dist)
-        adjacency[n.id].below = { text: m.text || m.type, dist: Math.round(d) }
-    }
-    // above
-    if (m.y + m.h <= n.y && xOverlap(n, m) > 0) {
-      const d = n.y - (m.y + m.h)
-      if (!adjacency[n.id].above || d < adjacency[n.id].above.dist)
-        adjacency[n.id].above = { text: m.text || m.type, dist: Math.round(d) }
-    }
-  }
-}
-
-// --- Reading order: spatial sort (top-to-bottom, left-to-right within rows) ---
-const readingOrder = [...bounded].sort((a, b) => a.y - b.y || a.x - b.x).map((n) => n.text || n.type)
-
-// --- Alignment: shapes sharing x (columns) or y (rows), within 10px tolerance ---
-function groupBy(val, map) {
-  const groups = {}
-  for (const n of bounded) {
-    const key = Math.round(val(n) / 10) * 10
-    groups[key] = groups[key] || []
-    groups[key].push(n.text || n.type)
-  }
-  return Object.entries(groups).filter(([, v]) => v.length > 1).map(([k, v]) => ({ at: Number(k), shapes: v }))
-}
-const columns = groupBy((n) => n.x, 'x')
-const rowsAligned = groupBy((n) => n.y, 'y')
-
-// --- Row layout with proportions (y-band grouping, 80px tolerance) ---
-const rows = {}
-for (const n of nodes) {
-  const band = Math.round(n.y / 80) * 80
-  if (!rows[band]) rows[band] = []
-  rows[band].push(n)
-}
-const rowSummary = Object.entries(rows)
-  .sort(([a], [b]) => Number(a) - Number(b))
-  .map(([y, shapes]) => {
-    shapes.sort((a, b) => a.x - b.x)
-    const rowArea = shapes.reduce((sum, s) => sum + s.area, 0)
-    return {
-      y: Number(y),
-      shapeCount: shapes.length,
-      shapes: shapes.map((s) => ({
-        text: s.text || s.type, w: s.w, h: s.h,
-        ratio: rowArea > 0 ? Math.round((s.area / rowArea) * 100) + '%' : '?',
-        selected: s.selected,
-      })),
-    }
-  })
-
-// --- Selection bounding box ---
-const selectedNodes = nodes.filter((s) => s.selected)
-let selectionBounds = null
-if (selectedNodes.length) {
-  const minX = Math.min(...selectedNodes.map((s) => s.x))
-  const minY = Math.min(...selectedNodes.map((s) => s.y))
-  const maxX = Math.max(...selectedNodes.map((s) => s.x + s.w))
-  const maxY = Math.max(...selectedNodes.map((s) => s.y + s.h))
-  selectionBounds = { x: minX, y: minY, w: Math.round(maxX - minX), h: Math.round(maxY - minY) }
-}
-
-const totalArea = nodes.reduce((sum, s) => sum + s.area, 0)
-
-return {
-  shapeCount: allShapes.length,
-  nodeCount: nodes.length,
-  arrowCount: arrows.length,
-  selectedCount: selectedNodes.length,
-  selected: selectedNodes.map((s) => ({ text: s.text || s.type, type: s.type, w: s.w, h: s.h, x: s.x, y: s.y, color: s.color })),
-  selectionBounds,
-  arrows,
-  connections,
-  containment,
-  adjacency: Object.values(adjacency),
-  readingOrder,
-  alignedColumns: columns,
-  alignedRows: rowsAligned,
-  totalArea,
-  layout: rowSummary,
-  nodes: nodes.sort((a, b) => b.area - a.area).map((s) => ({
-    id: s.id, text: s.text || s.type, type: s.type, x: s.x, y: s.y, w: s.w, h: s.h, area: s.area,
-    ratio: totalArea > 0 ? Math.round((s.area / totalArea) * 100) + '%' : '?',
-    color: s.color, selected: s.selected,
-  })),
-}
-`
 
 function createProjectCanvasId() {
 	return randomUUID().replace(/-/g, '').slice(0, 8)
 }
 
 const INITIALIZE_CANVAS_CODE = 'return { initialized: true }'
+
+type CanvasStateBundle = { shapes: unknown[]; assets?: unknown[]; bindings?: unknown[]; selectedIds?: unknown[] }
+type SceneLens = 'all' | 'selected'
+
+function normalizeShapeId(id: unknown): string | null {
+	return id == null ? null : String(id).replace(/^shape:/, '')
+}
+
+function shapeIdOf(shape: unknown): string | null {
+	if (!shape || typeof shape !== 'object') return null
+	const record = shape as Record<string, unknown>
+	return normalizeShapeId(record.shapeId ?? record.id)
+}
+
+function bindingTouchesSelection(binding: unknown, selectedIds: Set<string>): boolean {
+	if (!binding || typeof binding !== 'object') return false
+	const record = binding as Record<string, unknown>
+	const ids = [record.fromId, record.toId]
+	return ids.some((id) => {
+		const normalized = normalizeShapeId(id)
+		return normalized != null && selectedIds.has(normalized)
+	})
+}
+
+function applySceneLens(bundle: CanvasStateBundle, lens: SceneLens): CanvasStateBundle {
+	if (lens === 'all') return bundle
+	const selectedIds = new Set(
+		(Array.isArray(bundle.selectedIds) ? bundle.selectedIds : [])
+			.map((id) => normalizeShapeId(id))
+			.filter((id): id is string => id != null)
+	)
+	return {
+		...bundle,
+		shapes: bundle.shapes.filter((shape) => {
+			const id = shapeIdOf(shape)
+			return id != null && selectedIds.has(id)
+		}),
+		bindings: Array.isArray(bundle.bindings) ? bundle.bindings.filter((binding) => bindingTouchesSelection(binding, selectedIds)) : bundle.bindings,
+		selectedIds: [...selectedIds],
+	}
+}
 
 function restoreCanvasCode(snapshot: { shapes?: unknown[] }) {
 	const shapes = Array.isArray(snapshot.shapes) ? snapshot.shapes : []
@@ -787,8 +659,11 @@ export default function (pi: ExtensionAPI) {
 		name: 'tldraw_canvas_state',
 		label: 'Inspect tldraw Canvas State',
 		description:
-			'Read the visible tldraw canvas state through the local browser host and optionally save it to the project-scoped .pi/tldraw-canvases store.',
-		promptSnippet: 'Inspect the current visible tldraw canvas shapes without changing the drawing.',
+			'Read RAW tldraw canvas shapes (every shape with exact x/y/w/h and all props) through the local browser host, and optionally save to the project-scoped .pi/tldraw-canvases store. This is verbose; to UNDERSTAND the canvas prefer tldraw_canvas_scene (compact semantic view). Use this when you need precise geometry to edit a specific shape, or to force a project save.',
+		promptSnippet: 'Read raw tldraw shapes with exact geometry (verbose) or save the project snapshot. For understanding the canvas, prefer tldraw_canvas_scene.',
+		promptGuidelines: [
+			'Prefer tldraw_canvas_scene to look at or reason about the canvas — it is far cheaper. Use tldraw_canvas_state only for exact per-shape geometry before an edit, or to save a snapshot.',
+		],
 		parameters: Type.Object({
 			canvasId: Type.Optional(
 				Type.String({ description: 'Canvas ID to read. Omit to use the current project canvas.' })
@@ -858,37 +733,95 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerTool({
 		name: 'tldraw_canvas_scene',
-		label: 'Read tldraw Canvas Scene',
+		label: 'Read tldraw Canvas (semantic view)',
 		description:
-			'Read the complete spatial layout of the visible tldraw canvas: every shape with geometry (x, y, w, h, area), selection state, arrow connections, and a row-by-row layout analysis with size proportions. This is the "glance at the canvas" view — use it first before responding to what the user sees or draws.',
-		promptSnippet: 'See the full spatial layout of the canvas — sizes, positions, hierarchy, selection, connections — in one read.',
+			'Read the canvas as a compact, meaning-first view — a census, the connection graph, and the spatial structure, NOT raw coordinates. This is the cheap "glance at the canvas" read; the level of detail is chosen automatically by canvas size, so it scales to large canvases. Use this FIRST whenever you need to look at, understand, or build on what is drawn. Falls back to the saved snapshot when no live browser is connected, so it also works offline.',
+		promptSnippet: 'Glance at the canvas as a compact semantic view (cheap; scales to large canvases).',
 		promptGuidelines: [
-			'Use tldraw_canvas_scene as the FIRST call when the user asks you to look at, respond to, or build on what they have drawn.',
-			'It returns every shape with x/y/w/h/area, which shapes are selected, arrow connections, and a row layout with size ratios — everything needed to understand the diagram spatially.',
+			'tldraw_canvas_scene is the DEFAULT way to look at the canvas — call it first to understand what the user has drawn. You do not choose the detail level; it is picked automatically (overview for small canvases, summary for large ones).',
+			'It returns a meaning-first view (graph + structure), not raw geometry. This is far cheaper than reading raw shapes and is what you should reason over for layout, relationships, and intent.',
+			'Use lens:"selected" when the user has selected shapes and wants a semantic view of only that selection; use lens:"all" or omit it for the whole canvas.',
+			'Reach for tldraw_canvas_state (raw shapes with exact x/y/w/h) ONLY when you need precise geometry to move or resize a specific shape — i.e. right before an edit. For understanding, always prefer the scene.',
+			'You can override the level with detail: "overview" | "summary" | "raw" if you really need to; the default "auto" is almost always correct.',
 		],
 		parameters: Type.Object({
+			detail: Type.Optional(
+				Type.String({
+					description:
+						'auto | overview | summary | raw. Default "auto" picks overview for small canvases and summary for large ones. Use "raw" only when you need exact per-shape geometry to edit.',
+				})
+			),
 			open: Type.Optional(
-				Type.Boolean({ description: 'Whether to open/focus the browser host before reading. Defaults to false (reuse connected browser).' })
+				Type.Boolean({ description: 'Open/focus the browser host before reading. Defaults to false (reuse a connected browser, else fall back to the saved snapshot).' })
+			),
+			canvasId: Type.Optional(
+				Type.String({ description: 'Canvas to read from the saved snapshot when no live browser is connected.' })
+			),
+			lens: Type.Optional(
+				Type.String({ description: 'all | selected. Default "all" reads the whole canvas; "selected" reads only currently selected shapes.' })
 			),
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const cwd = ctx?.cwd ?? sessionCwd
 			await serverManager.ensure(signal)
-			const started = params.open === true ? await ensureBrowserAndRestore(cwd, undefined, signal) : await canvasHost.ensureStarted(signal)
-			if (!canvasHost.getStatus().browserConnected) {
-				throw new Error('No live browser canvas is connected. Use /tldraw open or pass open: true, wait for Canvas ready, then read the scene.')
+			const detail = (params.detail ?? 'auto') as 'auto' | Aperture | 'raw'
+			const lensParam = params.lens ?? 'all'
+			if (lensParam !== 'all' && lensParam !== 'selected') throw new Error('lens must be "all" or "selected"')
+			const lens = lensParam as SceneLens
+
+			if (params.open === true) await ensureBrowserAndRestore(cwd, params.canvasId, signal)
+			else await canvasHost.ensureStarted(signal)
+
+			// Prefer the live canvas; fall back to the saved snapshot so this read
+			// works headless/offline. The semantic layer runs in-extension on either.
+			let resolvedCanvasId = await resolveCanvasId(cwd, params.canvasId)
+			let bundle: CanvasStateBundle | null = null
+			let source = 'live'
+			if (canvasHost.getStatus().browserConnected) {
+				const result: any = await canvasHost.execOnCanvas(
+					{ code: READ_CANVAS_STATE_CODE, canvasId: resolvedCanvasId },
+					signal
+				)
+				resolvedCanvasId = parseCanvasIdFromResult(result) ?? resolvedCanvasId
+				bundle = result?.structuredContent ?? extractReturnValue(result) ?? null
+			} else {
+				const snapshot = await loadCanvasSnapshot(cwd, resolvedCanvasId)
+				if (snapshot) {
+					bundle = { shapes: snapshot.shapes, assets: snapshot.assets, bindings: snapshot.bindings }
+					source = 'snapshot'
+				}
 			}
-			const canvasId = await resolveCanvasId(cwd)
-			const result: any = await canvasHost.execOnCanvas(
-				{ code: READ_CANVAS_SCENE_CODE, canvasId },
-				signal
-			)
-			const returnedCanvasId = parseCanvasIdFromResult(result) ?? canvasId
-			const scene = extractReturnValue(result)
-			if (returnedCanvasId) await rememberCanvasId(cwd, returnedCanvasId)
+			if (!bundle || !Array.isArray(bundle.shapes)) {
+				throw new Error(
+					'No canvas to read. Open the canvas with /tldraw open (wait for "Canvas ready"), or pass a canvasId that has a saved snapshot.'
+				)
+			}
+			if (resolvedCanvasId) await rememberCanvasId(cwd, resolvedCanvasId)
+
+			const selectedCount = Array.isArray(bundle.selectedIds) ? bundle.selectedIds.length : 0
+			const lensedBundle = applySceneLens(bundle, lens)
+
+			if (detail === 'raw') {
+				const raw = { shapes: lensedBundle.shapes, assets: lensedBundle.assets ?? [], bindings: lensedBundle.bindings ?? [] }
+				return {
+					content: [{ type: 'text', text: JSON.stringify(raw, null, 2) }],
+					details: { endpoint, source, canvasId: resolvedCanvasId, detail: 'raw', lens, selectedCount },
+				}
+			}
+
+			const rows = buildTensor(lensedBundle as CanvasBundle)
+			const aperture: Aperture = detail === 'auto' ? chooseAperture(rows) : detail
+			const view = aperture === 'summary' ? renderSummary(rows) : renderOverview(rows)
+			const lensNote = lens === 'selected' ? ' · lens=selected' : ''
+			const emptySelectionNote = lens === 'selected' && selectedCount === 0 ? ' · no selected shapes' : ''
+			const header = `tldraw canvas · ${rows.length} elements · aperture=${aperture}${lensNote}${source === 'snapshot' ? ' · from saved snapshot' : ''}${selectedCount ? ` · ${selectedCount} selected` : ''}${emptySelectionNote}`
+			const hint =
+				aperture === 'summary'
+					? 'Bounded summary of a large canvas. For a specific node\'s edges use detail:"overview"; for exact geometry to edit, use tldraw_canvas_state or detail:"raw".'
+					: 'For exact x/y/w/h to move or resize a shape, call tldraw_canvas_state or detail:"raw".'
 			return {
-				content: [{ type: 'text', text: JSON.stringify(scene, null, 2) }],
-				details: { endpoint, host: canvasHost.getStatus(), canvasId: returnedCanvasId, scene },
+				content: [{ type: 'text', text: `${header}\n\n${view}\n\n${hint}` }],
+				details: { endpoint, source, canvasId: resolvedCanvasId, aperture, lens, elements: rows.length, selectedCount },
 			}
 		},
 	})
