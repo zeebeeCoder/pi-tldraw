@@ -25,15 +25,12 @@
     "tldraw"
   ],
   "files": [
-    "index.ts",
-    "local-host.ts",
-    "server-manager.ts",
-    "project-store.ts",
-    "semantic-layer.ts",
+    "src/",
     "static/",
     "mcp-app/",
     "README.md",
     "PUBLISHING.md",
+    "tsconfig.json",
     "LICENSE"
   ],
   "engines": {
@@ -41,7 +38,7 @@
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./src/index.ts"
     ]
   },
   "scripts": {

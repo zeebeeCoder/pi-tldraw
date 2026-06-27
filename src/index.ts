@@ -1,7 +1,24 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { randomUUID } from 'node:crypto'
 import { Type } from 'typebox'
-import { createCanvasHost } from './local-host'
+import {
+	applySceneLens,
+	asCanvasBundle,
+	READ_CANVAS_STATE_CODE,
+	type CanvasStateBundle,
+	type SceneLens,
+	summarizeSnapshot,
+	toRawCanvasState,
+} from './canvas/state'
+import { createCanvasWorkflows } from './canvas/workflow'
+import { createCanvasHost } from './host/local-host'
+import { TldrawMcpClient, type McpTool } from './mcp/client'
+import {
+	extractReturnValue,
+	extractTextContent,
+	parseCanvasIdFromResult,
+	type McpToolResult,
+} from './mcp/response'
 import {
 	getCanvasDir,
 	getCurrentCanvasId as getStoredCurrentCanvasId,
@@ -9,164 +26,20 @@ import {
 	loadCanvasSnapshot,
 	saveCanvasSnapshot,
 	setCurrentCanvasId as setStoredCurrentCanvasId,
-} from './project-store'
-import { createMcpServerManager } from './server-manager'
+} from './store/project-store'
+import { createMcpServerManager } from './server/server-manager'
 import {
 	buildTensor,
 	chooseAperture,
 	renderOverview,
 	renderSummary,
 	type Aperture,
-	type CanvasBundle,
-} from './semantic-layer'
+} from './semantic/layer'
+import { parseTldrawCommand } from './commands/tldraw-command'
+import { createTldrawStatusIndicator } from './ui/tldraw-status'
 
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8787/mcp'
-const MCP_PROTOCOL_VERSION = '2025-06-18'
 const CANVAS_RESOURCE_URI = 'ui://show-canvas/mcp-app.html'
-
-type JsonRpcResponse<T = unknown> = {
-	jsonrpc: '2.0'
-	id?: string | number
-	result?: T
-	error?: { code: number; message: string; data?: unknown }
-}
-
-type McpTool = {
-	name: string
-	title?: string
-	description?: string
-	inputSchema?: unknown
-	_meta?: unknown
-}
-
-type McpResource = {
-	uri: string
-	name?: string
-	title?: string
-	description?: string
-	mimeType?: string
-}
-
-class TldrawMcpClient {
-	private sessionId: string | null = null
-	private nextId = 1
-
-	constructor(
-		private readonly endpoint: string,
-		private readonly ensureServer?: (signal?: AbortSignal) => Promise<void>
-	) {}
-
-	async initialize(signal?: AbortSignal) {
-		if (this.sessionId) return
-		await this.ensureServer?.(signal)
-
-		const { response, payload } = await this.post<JsonRpcResponse>(
-			{
-				jsonrpc: '2.0',
-				id: this.nextId++,
-				method: 'initialize',
-				params: {
-					protocolVersion: MCP_PROTOCOL_VERSION,
-					capabilities: {},
-					clientInfo: { name: 'pi-tldraw', version: '0.0.1' },
-				},
-			},
-			signal
-		)
-
-		const sessionId = response.headers.get('mcp-session-id')
-		if (!sessionId) {
-			throw new Error('tldraw MCP initialize succeeded but did not return mcp-session-id')
-		}
-		if (payload.error) throw new Error(payload.error.message)
-
-		this.sessionId = sessionId
-		await this.notifyInitialized(signal)
-	}
-
-	async listTools(signal?: AbortSignal): Promise<McpTool[]> {
-		const result = await this.request<{ tools?: McpTool[] }>('tools/list', {}, signal)
-		return result.tools ?? []
-	}
-
-	async listResources(signal?: AbortSignal): Promise<McpResource[]> {
-		const result = await this.request<{ resources?: McpResource[] }>('resources/list', {}, signal)
-		return result.resources ?? []
-	}
-
-	async callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal) {
-		return this.request('tools/call', { name, arguments: args }, signal)
-	}
-
-	async readResource(uri: string, signal?: AbortSignal) {
-		return this.request('resources/read', { uri }, signal)
-	}
-
-	reset() {
-		this.sessionId = null
-	}
-
-	private async notifyInitialized(signal?: AbortSignal) {
-		await this.post(
-			{
-				jsonrpc: '2.0',
-				method: 'notifications/initialized',
-			},
-			signal,
-			{ sessionId: this.sessionId }
-		)
-	}
-
-	private async request<T = unknown>(method: string, params: unknown, signal?: AbortSignal): Promise<T> {
-		await this.initialize(signal)
-		const { payload } = await this.post<JsonRpcResponse<T>>(
-			{
-				jsonrpc: '2.0',
-				id: this.nextId++,
-				method,
-				params,
-			},
-			signal,
-			{ sessionId: this.sessionId }
-		)
-		if (payload.error) throw new Error(payload.error.message)
-		return payload.result as T
-	}
-
-	private async post<T>(body: unknown, signal?: AbortSignal, opts?: { sessionId?: string | null }) {
-		const headers: Record<string, string> = {
-			'Content-Type': 'application/json',
-			Accept: 'application/json, text/event-stream',
-		}
-		if (opts?.sessionId) headers['mcp-session-id'] = opts.sessionId
-
-		const response = await fetch(this.endpoint, {
-			method: 'POST',
-			headers,
-			body: JSON.stringify(body),
-			signal,
-		})
-		const text = await response.text()
-		if (!response.ok) {
-			throw new Error(`MCP HTTP ${response.status}: ${text}`)
-		}
-		return { response, payload: parseMcpResponse<T>(text) }
-	}
-}
-
-function parseMcpResponse<T>(text: string): T {
-	const trimmed = text.trim()
-	if (!trimmed) return undefined as T
-	if (trimmed.startsWith('{') || trimmed.startsWith('[')) return JSON.parse(trimmed) as T
-
-	// Streamable HTTP responses commonly come back as SSE: `event: message\ndata: {...}`.
-	for (const line of trimmed.split(/\r?\n/)) {
-		if (!line.startsWith('data:')) continue
-		return JSON.parse(line.slice('data:'.length).trim()) as T
-	}
-
-	throw new Error(`Could not parse MCP response: ${trimmed.slice(0, 200)}`)
-}
 
 function compactToolList(tools: McpTool[]) {
 	return tools.map((tool) => {
@@ -175,138 +48,12 @@ function compactToolList(tools: McpTool[]) {
 	})
 }
 
-function extractTextContent(result: any): string {
-	const content = result?.content
-	if (!Array.isArray(content)) return JSON.stringify(result, null, 2)
-	return content
-		.map((item) => {
-			if (item?.type === 'text' && typeof item.text === 'string') return item.text
-			return JSON.stringify(item)
-		})
-		.join('\n')
-}
-
 function isBlockedTool(name: string) {
 	return name === 'exec' || name.startsWith('_') || name === 'save_checkpoint' || name === 'read_checkpoint'
 }
 
-function parseCanvasIdFromText(text: string) {
-	return text.match(/Canvas ID: ([^\s]+)/)?.[1]
-}
-
-function parseCanvasIdFromResult(result: unknown) {
-	return parseCanvasIdFromText(extractTextContent(result as any))
-}
-
-function extractReturnValue(result: any): any {
-	const text = extractTextContent(result)
-	const marker = 'Return value:\n'
-	const start = text.indexOf(marker)
-	if (start === -1) return undefined
-	const afterMarker = text.slice(start + marker.length)
-	const end = afterMarker.indexOf('\n\nCanvas ID:')
-	const json = (end === -1 ? afterMarker : afterMarker.slice(0, end)).trim()
-	if (!json) return undefined
-	try {
-		return JSON.parse(json)
-	} catch {
-		return undefined
-	}
-}
-
-function summarizeSnapshot(snapshot: { shapes?: unknown[]; assets?: unknown[]; bindings?: unknown[] }) {
-	const shapeCount = Array.isArray(snapshot.shapes) ? snapshot.shapes.length : 0
-	const assetCount = Array.isArray(snapshot.assets) ? snapshot.assets.length : 0
-	const bindingCount = Array.isArray(snapshot.bindings) ? snapshot.bindings.length : 0
-	return `${shapeCount} shape(s), ${assetCount} asset(s), ${bindingCount} binding(s)`
-}
-
-const READ_CANVAS_STATE_CODE = `
-const shapes = editor.getCurrentPageShapes()
-const assets = typeof editor.getAssets === 'function' ? editor.getAssets() : []
-let bindings = []
-try {
-	for (const shape of shapes) {
-		const shapeId = shape.shapeId ?? shape.id
-		if (!shapeId || typeof editor.getBindingsFromShape !== 'function') continue
-		const shapeBindings = editor.getBindingsFromShape(shapeId, 'arrow') ?? []
-		bindings.push(...shapeBindings)
-	}
-} catch {
-	bindings = []
-}
-let selectedIds = []
-try { selectedIds = (editor.getSelectedShapeIds() || []).map((id) => String(id)) } catch { selectedIds = [] }
-return { shapes, assets, bindings, selectedIds }
-`
-
-
 function createProjectCanvasId() {
 	return randomUUID().replace(/-/g, '').slice(0, 8)
-}
-
-const INITIALIZE_CANVAS_CODE = 'return { initialized: true }'
-
-type CanvasStateBundle = { shapes: unknown[]; assets?: unknown[]; bindings?: unknown[]; selectedIds?: unknown[] }
-type SceneLens = 'all' | 'selected'
-
-function normalizeShapeId(id: unknown): string | null {
-	return id == null ? null : String(id).replace(/^shape:/, '')
-}
-
-function shapeIdOf(shape: unknown): string | null {
-	if (!shape || typeof shape !== 'object') return null
-	const record = shape as Record<string, unknown>
-	return normalizeShapeId(record.shapeId ?? record.id)
-}
-
-function bindingTouchesSelection(binding: unknown, selectedIds: Set<string>): boolean {
-	if (!binding || typeof binding !== 'object') return false
-	const record = binding as Record<string, unknown>
-	const ids = [record.fromId, record.toId]
-	return ids.some((id) => {
-		const normalized = normalizeShapeId(id)
-		return normalized != null && selectedIds.has(normalized)
-	})
-}
-
-function applySceneLens(bundle: CanvasStateBundle, lens: SceneLens): CanvasStateBundle {
-	if (lens === 'all') return bundle
-	const selectedIds = new Set(
-		(Array.isArray(bundle.selectedIds) ? bundle.selectedIds : [])
-			.map((id) => normalizeShapeId(id))
-			.filter((id): id is string => id != null)
-	)
-	return {
-		...bundle,
-		shapes: bundle.shapes.filter((shape) => {
-			const id = shapeIdOf(shape)
-			return id != null && selectedIds.has(id)
-		}),
-		bindings: Array.isArray(bundle.bindings) ? bundle.bindings.filter((binding) => bindingTouchesSelection(binding, selectedIds)) : bundle.bindings,
-		selectedIds: [...selectedIds],
-	}
-}
-
-function restoreCanvasCode(snapshot: { shapes?: unknown[] }) {
-	const shapes = Array.isArray(snapshot.shapes) ? snapshot.shapes : []
-	return `
-const snapshotShapes = ${JSON.stringify(shapes)}
-const currentShapes = editor.getCurrentPageShapes()
-const currentIds = currentShapes.map((shape) => shape.shapeId ?? shape.id).filter(Boolean)
-if (currentIds.length) editor.deleteShapes(currentIds)
-const nonArrows = snapshotShapes.filter((shape) => (shape._type ?? shape.type) !== 'arrow')
-const arrows = snapshotShapes.filter((shape) => (shape._type ?? shape.type) === 'arrow')
-for (const shape of nonArrows) editor.createShape(shape)
-for (const shape of arrows) editor.createShape(shape)
-const restoredIds = snapshotShapes.map((shape) => shape.shapeId ?? shape.id).filter(Boolean)
-if (restoredIds.length) {
-	editor.select(...restoredIds)
-	editor.zoomToSelection()
-	editor.selectNone()
-}
-return { restored: snapshotShapes.length, shapeIds: restoredIds }
-`
 }
 
 export default function (pi: ExtensionAPI) {
@@ -316,70 +63,7 @@ export default function (pi: ExtensionAPI) {
 	let sessionCwd = process.cwd()
 	let sessionCanvasId: string | undefined
 
-	type TldrawPhase = 'idle' | 'starting' | 'ready' | 'connected' | 'working' | 'error' | 'disconnected'
-
-	let statusCtx: { hasUI: boolean; ui: any } | null = null
-	let spinnerTimer: ReturnType<typeof setInterval> | null = null
-	let spinnerPhase = 0
-	// Braille snake spinner — the classic indeterminate-progress frames.
-	const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
-	// Left divider segments this widget's status from neighbors in the bar.
-	function divider() {
-		return statusCtx!.ui.theme.fg('dim', '│ ')
-	}
-
-	function renderStatus(phase: TldrawPhase) {
-		if (!statusCtx?.hasUI) return
-		const iconColor =
-			phase === 'error' ? 'error' :
-			phase === 'connected' ? 'success' :
-			phase === 'disconnected' ? 'warning' :
-			'accent'
-		const icon =
-			phase === 'connected' ? '●' :
-			phase === 'disconnected' ? '○' :
-			phase === 'error' ? '✗' :
-			'•'
-		statusCtx.ui.setStatus(
-			'tldraw',
-			divider() +
-				statusCtx.ui.theme.fg(iconColor, icon) +
-				statusCtx.ui.theme.fg('muted', ' tldraw')
-		)
-	}
-
-	function renderSpinnerFrame() {
-		if (!statusCtx?.hasUI) return
-		const frame = SPINNER_FRAMES[spinnerPhase % SPINNER_FRAMES.length]
-		statusCtx.ui.setStatus(
-			'tldraw',
-			divider() +
-				statusCtx.ui.theme.fg('accent', frame) +
-				statusCtx.ui.theme.fg('muted', ' tldraw')
-		)
-		spinnerPhase++
-	}
-
-	function startSpinner() {
-		if (spinnerTimer) return
-		spinnerPhase = 0
-		spinnerTimer = setInterval(renderSpinnerFrame, 120)
-	}
-
-	function stopSpinner() {
-		if (spinnerTimer) { clearInterval(spinnerTimer); spinnerTimer = null }
-	}
-
-	function updateStatus(ctx: { hasUI: boolean; ui: any }, phase: TldrawPhase) {
-		statusCtx = ctx
-		if (phase === 'working' || phase === 'starting') {
-			startSpinner()
-		} else {
-			stopSpinner()
-			renderStatus(phase)
-		}
-	}
+	const statusIndicator = createTldrawStatusIndicator()
 	const canvasHost = createCanvasHost(pi, endpoint, CANVAS_RESOURCE_URI, {
 		async onAutoSave({
 			canvasId,
@@ -405,79 +89,15 @@ export default function (pi: ExtensionAPI) {
 		await setStoredCurrentCanvasId(cwd, canvasId)
 	}
 
-	/**
-	 * Open the browser host if needed and restore the project snapshot into a
-	 * freshly spawned (blank) window. If a browser is already connected, the
-	 * live canvas is left untouched so the user's in-progress edits survive —
-	 * this is what makes pair diagramming work: Pi and the user share one canvas.
-	 */
-	async function ensureBrowserAndRestore(
-		cwd: string,
-		canvasId: string | undefined,
-		signal?: AbortSignal,
-		opts: { restore?: boolean } = {}
-	) {
-		const { url, spawned } = await canvasHost.open(signal)
-		let resolvedId = await resolveCanvasId(cwd, canvasId)
-		let restoreText = spawned
-			? 'No project canvas restored.'
-			: 'Browser already open; live canvas unchanged.'
-		// Only restore when we just spawned a fresh (blank) browser window.
-		if (spawned && opts.restore !== false) {
-			if (!resolvedId) resolvedId = createProjectCanvasId()
-			const snapshot = await loadCanvasSnapshot(cwd, resolvedId)
-			if (snapshot) {
-				await canvasHost.execOnCanvas(
-					{ code: restoreCanvasCode(snapshot), canvasId: snapshot.canvasId },
-					signal
-				)
-				await rememberCanvasId(cwd, snapshot.canvasId)
-				restoreText = `Restored project canvas ${snapshot.canvasId} (${summarizeSnapshot(snapshot)}). Autosave is on.`
-			} else {
-				await canvasHost.execOnCanvas(
-					{ code: INITIALIZE_CANVAS_CODE, canvasId: resolvedId },
-					signal
-				)
-				await rememberCanvasId(cwd, resolvedId)
-				restoreText = `Started new project canvas ${resolvedId}. Autosave is on.`
-			}
-		}
-		return { url, spawned, resolvedId, restoreText }
-	}
 
-	async function snapshotLiveCanvas(
-		cwd: string,
-		canvasId: string | undefined,
-		signal?: AbortSignal,
-		opts?: { allowEmptyOverwrite?: boolean }
-	) {
-		const hostStatus = canvasHost.getStatus()
-		if (!hostStatus.browserConnected) {
-			throw new Error(
-				`No live browser canvas is connected. Open the canvas tab with /tldraw open, wait for "Canvas ready", then save again. Host: ${hostStatus.url ?? 'not started'}`
-			)
-		}
-		const result: any = await canvasHost.execOnCanvas(
-			{ code: READ_CANVAS_STATE_CODE, canvasId, timeoutMs: 60_000 },
-			signal
-		)
-		const text = extractTextContent(result)
-		const returnedCanvasId = parseCanvasIdFromText(text) ?? canvasId
-		if (!returnedCanvasId) throw new Error('Could not determine canvasId from live canvas read.')
-		const state = result?.structuredContent ?? extractReturnValue(result)
-		const saved = await saveCanvasSnapshot(
-			cwd,
-			returnedCanvasId,
-			{
-				shapes: Array.isArray(state?.shapes) ? state.shapes : [],
-				assets: Array.isArray(state?.assets) ? state.assets : [],
-				bindings: Array.isArray(state?.bindings) ? state.bindings : [],
-			},
-			{ allowEmptyOverwrite: opts?.allowEmptyOverwrite }
-		)
-		await rememberCanvasId(cwd, returnedCanvasId)
-		return saved
-	}
+	const workflows = createCanvasWorkflows({
+		canvasHost,
+		loadCanvasSnapshot,
+		saveCanvasSnapshot,
+		resolveCanvasId,
+		rememberCanvasId,
+		createProjectCanvasId,
+	})
 
 	pi.registerTool({
 		name: 'tldraw_status',
@@ -522,7 +142,7 @@ export default function (pi: ExtensionAPI) {
 			}),
 		}),
 		async execute(_toolCallId, params, signal) {
-			const result = await client.callTool('search', { code: params.code }, signal)
+			const result = (await client.callTool('search', { code: params.code }, signal)) as McpToolResult
 			return {
 				content: [{ type: 'text', text: extractTextContent(result) }],
 				details: { endpoint, mcpTool: 'search', result },
@@ -537,8 +157,10 @@ export default function (pi: ExtensionAPI) {
 			'Read metadata for the tldraw MCP canvas app resource. This proves the artifact HTML is exposed, but Pi does not render MCP app iframes yet.',
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, signal) {
-			const result: any = await client.readResource(CANVAS_RESOURCE_URI, signal)
-			const html = result?.contents?.[0]?.text
+			const result = (await client.readResource(CANVAS_RESOURCE_URI, signal)) as {
+				contents?: Array<{ text?: unknown }>
+			}
+			const html = result.contents?.[0]?.text
 			const text = [
 				`Resource: ${CANVAS_RESOURCE_URI}`,
 				`HTML bytes: ${typeof html === 'string' ? html.length : 0}`,
@@ -568,7 +190,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const cwd = ctx?.cwd ?? sessionCwd
 			await serverManager.ensure(signal)
-			const { url, restoreText } = await ensureBrowserAndRestore(cwd, params.canvasId, signal, {
+			const { url, restoreText } = await workflows.ensureBrowserAndRestore(cwd, params.canvasId, signal, {
 				restore: params.restore !== false,
 			})
 			return {
@@ -623,21 +245,21 @@ export default function (pi: ExtensionAPI) {
 				started = await canvasHost.ensureStarted(signal)
 				canvasId = await resolveCanvasId(cwd, params.canvasId)
 			} else {
-				const opened = await ensureBrowserAndRestore(cwd, params.canvasId, signal)
+				const opened = await workflows.ensureBrowserAndRestore(cwd, params.canvasId, signal)
 				started = opened
 				canvasId = opened.resolvedId
 			}
-			const result = await canvasHost.execOnCanvas(
+			const result = (await canvasHost.execOnCanvas(
 				{ code: params.code, canvasId },
 				signal
-			)
+			)) as McpToolResult
 			const resultText = extractTextContent(result)
 			const returnedCanvasId = parseCanvasIdFromResult(result) ?? canvasId
 			let saveText = 'Project snapshot was not saved.'
 			if (returnedCanvasId) {
 				await rememberCanvasId(cwd, returnedCanvasId)
 				try {
-					const snapshot = await snapshotLiveCanvas(cwd, returnedCanvasId, signal)
+					const snapshot = await workflows.snapshotLiveCanvas(cwd, returnedCanvasId, signal)
 					saveText = `Saved project snapshot ${snapshot.canvasId} to ${getCanvasDir(cwd)} (${summarizeSnapshot(snapshot)}).`
 				} catch (error) {
 					saveText = `Could not save project snapshot: ${error instanceof Error ? error.message : String(error)}`
@@ -683,7 +305,7 @@ export default function (pi: ExtensionAPI) {
 			await serverManager.ensure(signal)
 			let started: { url: string | null; port?: number | null; spawned?: boolean }
 			if (params.open === true) {
-				started = await ensureBrowserAndRestore(cwd, params.canvasId, signal)
+				started = await workflows.ensureBrowserAndRestore(cwd, params.canvasId, signal)
 			} else {
 				started = await canvasHost.ensureStarted(signal)
 			}
@@ -691,12 +313,12 @@ export default function (pi: ExtensionAPI) {
 				throw new Error('No live browser canvas is connected. Use /tldraw open first, wait for Canvas ready, then inspect/save.')
 			}
 			const canvasId = await resolveCanvasId(cwd, params.canvasId)
-			const result: any = await canvasHost.execOnCanvas(
+			const result = (await canvasHost.execOnCanvas(
 				{ code: READ_CANVAS_STATE_CODE, canvasId },
 				signal
-			)
+			)) as McpToolResult
 			const returnedCanvasId = parseCanvasIdFromResult(result) ?? canvasId
-			const state = extractReturnValue(result) ?? {}
+			const state = (extractReturnValue(result) ?? {}) as Partial<CanvasStateBundle>
 			let saveText = 'Snapshot not saved.'
 			if (params.save !== false && returnedCanvasId) {
 				const snapshot = await saveCanvasSnapshot(
@@ -769,7 +391,7 @@ export default function (pi: ExtensionAPI) {
 			if (lensParam !== 'all' && lensParam !== 'selected') throw new Error('lens must be "all" or "selected"')
 			const lens = lensParam as SceneLens
 
-			if (params.open === true) await ensureBrowserAndRestore(cwd, params.canvasId, signal)
+			if (params.open === true) await workflows.ensureBrowserAndRestore(cwd, params.canvasId, signal)
 			else await canvasHost.ensureStarted(signal)
 
 			// Prefer the live canvas; fall back to the saved snapshot so this read
@@ -778,12 +400,12 @@ export default function (pi: ExtensionAPI) {
 			let bundle: CanvasStateBundle | null = null
 			let source = 'live'
 			if (canvasHost.getStatus().browserConnected) {
-				const result: any = await canvasHost.execOnCanvas(
+				const result = (await canvasHost.execOnCanvas(
 					{ code: READ_CANVAS_STATE_CODE, canvasId: resolvedCanvasId },
 					signal
-				)
+				)) as McpToolResult
 				resolvedCanvasId = parseCanvasIdFromResult(result) ?? resolvedCanvasId
-				bundle = result?.structuredContent ?? extractReturnValue(result) ?? null
+				bundle = (result.structuredContent ?? extractReturnValue(result) ?? null) as CanvasStateBundle | null
 			} else {
 				const snapshot = await loadCanvasSnapshot(cwd, resolvedCanvasId)
 				if (snapshot) {
@@ -802,14 +424,14 @@ export default function (pi: ExtensionAPI) {
 			const lensedBundle = applySceneLens(bundle, lens)
 
 			if (detail === 'raw') {
-				const raw = { shapes: lensedBundle.shapes, assets: lensedBundle.assets ?? [], bindings: lensedBundle.bindings ?? [] }
+				const raw = toRawCanvasState(lensedBundle)
 				return {
 					content: [{ type: 'text', text: JSON.stringify(raw, null, 2) }],
 					details: { endpoint, source, canvasId: resolvedCanvasId, detail: 'raw', lens, selectedCount },
 				}
 			}
 
-			const rows = buildTensor(lensedBundle as CanvasBundle)
+			const rows = buildTensor(asCanvasBundle(lensedBundle))
 			const aperture: Aperture = detail === 'auto' ? chooseAperture(rows) : detail
 			const view = aperture === 'summary' ? renderSummary(rows) : renderOverview(rows)
 			const lensNote = lens === 'selected' ? ' · lens=selected' : ''
@@ -841,11 +463,12 @@ export default function (pi: ExtensionAPI) {
 					`Blocked ${params.toolName}: this Pi experiment only exposes read-only MCP calls. The tldraw MCP exec tool requires an MCP app iframe host.`
 				)
 			}
-			const args = JSON.parse(params.argsJson)
+			const args = JSON.parse(params.argsJson) as unknown
 			if (!args || typeof args !== 'object' || Array.isArray(args)) {
 				throw new Error('argsJson must parse to a JSON object')
 			}
-			const result = await client.callTool(params.toolName, args, signal)
+			const toolArgs = args as Record<string, unknown>
+			const result = (await client.callTool(params.toolName, toolArgs, signal)) as McpToolResult
 			return {
 				content: [{ type: 'text', text: extractTextContent(result) }],
 				details: { endpoint, mcpTool: params.toolName, result },
@@ -856,18 +479,14 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand('tldraw', {
 		description: 'Inspect/control tldraw MCP (/tldraw status|start|restart|tools|resource|open [canvasId]|save|canvases|current|host|reset).',
 		handler: async (args, ctx) => {
-			const parts = args.trim().split(/\s+/).filter(Boolean)
-			const action = parts[0] || 'status'
-			const force = action.endsWith('!') || parts.includes('--force')
-			const normalizedAction = action.endsWith('!') ? action.slice(0, -1) : action
-			const argCanvasId = parts.slice(1).find((part) => !part.startsWith('--'))
-			try {
-				if (normalizedAction === 'reset') {
+			const command = parseTldrawCommand(args)
+			const clearStatus = () => ctx.ui.setStatus('tldraw', undefined)
+			const commandHandlers: Record<typeof command.type, () => Promise<void>> = {
+				reset: async () => {
 					client.reset()
 					ctx.ui.notify('tldraw MCP session reset.', 'info')
-					return
-				}
-				if (normalizedAction === 'current') {
+				},
+				current: async () => {
 					const current = await getStoredCurrentCanvasId(ctx.cwd)
 					ctx.ui.setWidget('tldraw-current', [
 						'tldraw current canvas:',
@@ -875,9 +494,8 @@ export default function (pi: ExtensionAPI) {
 						`canvasId: ${sessionCanvasId ?? current ?? 'none'}`,
 						`store: ${getCanvasDir(ctx.cwd)}`,
 					])
-					return
-				}
-				if (normalizedAction === 'canvases') {
+				},
+				canvases: async () => {
 					const canvases = await listCanvasSnapshots(ctx.cwd)
 					ctx.ui.setWidget('tldraw-canvases', [
 						`tldraw project canvases (${canvases.length}):`,
@@ -887,11 +505,10 @@ export default function (pi: ExtensionAPI) {
 								`- ${entry.canvasId} · ${entry.shapeCount} shape(s) · ${entry.updatedAt || 'unknown time'}`
 						),
 					])
-					return
-				}
-				if (normalizedAction === 'save') {
-					ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, 'working')
+				},
+				save: async () => {
+					clearStatus()
+					statusIndicator.update(ctx, 'working')
 					await serverManager.ensure(ctx.signal)
 					const status = canvasHost.getStatus()
 					if (!status.url) {
@@ -900,48 +517,45 @@ export default function (pi: ExtensionAPI) {
 					if (!status.browserConnected) {
 						throw new Error(`No live browser canvas is connected at ${status.url}. Reopen with /tldraw open before saving.`)
 					}
-					const canvasId = await resolveCanvasId(ctx.cwd, argCanvasId)
-					const snapshot = await snapshotLiveCanvas(ctx.cwd, canvasId, ctx.signal, { allowEmptyOverwrite: force })
+					const canvasId = await resolveCanvasId(ctx.cwd, command.canvasId)
+					const snapshot = await workflows.snapshotLiveCanvas(ctx.cwd, canvasId, ctx.signal, {
+						allowEmptyOverwrite: command.force,
+					})
 					ctx.ui.notify(`Saved ${snapshot.canvasId} (${summarizeSnapshot(snapshot)})`, 'info')
-					ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, canvasHost.getStatus().browserConnected ? 'connected' : 'ready')
-					return
-				}
-				if (normalizedAction === 'start') {
-					ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, 'starting')
+					clearStatus()
+					statusIndicator.update(ctx, canvasHost.getStatus().browserConnected ? 'connected' : 'ready')
+				},
+				start: async () => {
+					clearStatus()
+					statusIndicator.update(ctx, 'starting')
 					await serverManager.start(ctx.signal)
 					ctx.ui.notify(`tldraw MCP server reachable at ${endpoint}`, 'info')
-					ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, 'ready')
-					return
-				}
-				if (normalizedAction === 'restart') {
-					ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, 'starting')
+					clearStatus()
+					statusIndicator.update(ctx, 'ready')
+				},
+				restart: async () => {
+					clearStatus()
+					statusIndicator.update(ctx, 'starting')
 					client.reset()
 					await serverManager.restart(ctx.signal)
 					ctx.ui.notify(`tldraw MCP server restarted at ${endpoint}`, 'info')
-					ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, 'ready')
-					return
-				}
-				if (normalizedAction === 'tools') {
+					clearStatus()
+					statusIndicator.update(ctx, 'ready')
+				},
+				tools: async () => {
 					const tools = await client.listTools(ctx.signal)
 					ctx.ui.setWidget('tldraw', ['tldraw MCP tools:', ...compactToolList(tools)])
-					return
-				}
-				if (normalizedAction === 'open') {
-					ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, 'starting')
+				},
+				open: async () => {
+					clearStatus()
+					statusIndicator.update(ctx, 'starting')
 					await serverManager.ensure(ctx.signal)
-					const { url, restoreText } = await ensureBrowserAndRestore(ctx.cwd, argCanvasId, ctx.signal)
+					const { url, restoreText } = await workflows.ensureBrowserAndRestore(ctx.cwd, command.canvasId, ctx.signal)
 					ctx.ui.notify(`Opened tldraw canvas host: ${url}. ${restoreText}`, 'info')
-					ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, canvasHost.getStatus().browserConnected ? 'connected' : 'ready')
-					return
-				}
-				if (normalizedAction === 'host') {
+					clearStatus()
+					statusIndicator.update(ctx, canvasHost.getStatus().browserConnected ? 'connected' : 'ready')
+				},
+				host: async () => {
 					const status = canvasHost.getStatus()
 					const server = serverManager.getStatus()
 					ctx.ui.setWidget('tldraw-host', [
@@ -960,25 +574,29 @@ export default function (pi: ExtensionAPI) {
 						`app dir: ${server.appDir}`,
 						...server.logs.slice(-8),
 					])
-					return
-				}
-				if (normalizedAction === 'resource') {
-					const result: any = await client.readResource(CANVAS_RESOURCE_URI, ctx.signal)
-					const bytes = typeof result?.contents?.[0]?.text === 'string' ? result.contents[0].text.length : 0
+				},
+				resource: async () => {
+					const result = (await client.readResource(CANVAS_RESOURCE_URI, ctx.signal)) as {
+						contents?: Array<{ text?: unknown }>
+					}
+					const html = result.contents?.[0]?.text
+					const bytes = typeof html === 'string' ? html.length : 0
 					ctx.ui.notify(`Canvas resource fetched (${bytes} bytes).`, 'info')
-					return
-				}
-				const [tools, resources] = await Promise.all([
-					client.listTools(ctx.signal),
-					client.listResources(ctx.signal),
-				])
-				const server = serverManager.getStatus()
-				ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, 'ready')
-				ctx.ui.notify(`tldraw MCP OK at ${endpoint}${server.managedPid ? ` (pid ${server.managedPid})` : ''}`, 'info')
+				},
+				status: async () => {
+					await Promise.all([client.listTools(ctx.signal), client.listResources(ctx.signal)])
+					const server = serverManager.getStatus()
+					clearStatus()
+					statusIndicator.update(ctx, 'ready')
+					ctx.ui.notify(`tldraw MCP OK at ${endpoint}${server.managedPid ? ` (pid ${server.managedPid})` : ''}`, 'info')
+				},
+			}
+
+			try {
+				await commandHandlers[command.type]()
 			} catch (error) {
-				ctx.ui.setStatus('tldraw', undefined)
-				updateStatus(ctx, 'error')
+				clearStatus()
+				statusIndicator.update(ctx, 'error')
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), 'error')
 			}
 		},
@@ -987,11 +605,11 @@ export default function (pi: ExtensionAPI) {
 	pi.on('session_start', async (_event, ctx) => {
 		sessionCwd = ctx.cwd
 		sessionCanvasId = await getStoredCurrentCanvasId(ctx.cwd)
-		updateStatus(ctx, 'idle')
+		statusIndicator.update(ctx, 'idle')
 	})
 
 	pi.on('session_shutdown', async () => {
-		stopSpinner()
+		statusIndicator.stop()
 		client.reset()
 		await canvasHost.close()
 		await serverManager.stop()

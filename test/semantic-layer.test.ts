@@ -10,7 +10,7 @@ import {
 	renderView,
 	type CanvasBundle,
 	type FocusedShape,
-} from './semantic-layer'
+} from '../src/semantic/layer'
 
 // ---------------------------------------------------------------------------
 // Synthetic generators — emit FULL focused-format shapes + redundant bindings,

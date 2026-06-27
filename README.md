@@ -39,7 +39,7 @@ http://127.0.0.1:8787/mcp
 If that endpoint is not reachable, the extension tries to auto-start a local tldraw MCP app when the endpoint is local. Auto-start uses:
 
 1. `TLDRAW_MCP_APP_DIR`, if set.
-2. `./mcp-app` next to this package's `index.ts`, if present.
+2. `./mcp-app` at the package root, if present.
 
 For a development checkout of tldraw:
 
@@ -59,12 +59,19 @@ This is a testable Pi extension package:
 
 ```text
 pi-tldraw/
-├── index.ts                 # Pi extension entry point
-├── local-host.ts            # Local browser host + MCP AppBridge bridge
-├── server-manager.ts        # Local tldraw MCP server lifecycle
-├── project-store.ts         # Pure project-scoped snapshot persistence
-├── project-store.test.ts    # Unit tests for persistence behavior
+├── src/
+│   ├── index.ts             # Pi extension entry point / registration shell
+│   ├── canvas/              # pure canvas state helpers + workflows
+│   ├── commands/            # pure slash-command parsing
+│   ├── host/                # local browser host adapter
+│   ├── mcp/                 # MCP HTTP client + response parsing
+│   ├── semantic/            # pure canvas semantic rendering layer
+│   ├── server/              # local MCP server lifecycle adapter
+│   ├── store/               # project snapshot persistence
+│   └── ui/                  # Pi status widget adapter
+├── test/                    # pure helper/workflow/unit tests
 ├── static/app-bridge-bundle.js
+├── static/host.html
 ├── package.json             # Pi package metadata
 ├── PUBLISHING.md            # Maintainer publishing checklist
 └── tsconfig.json
@@ -75,7 +82,7 @@ Pi discovers the extension via:
 ```json
 {
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./src/index.ts"]
   }
 }
 ```
@@ -113,6 +120,7 @@ You should not need a manual save during normal use.
 ## Agent tools
 
 - `tldraw_canvas_open` — open/restore the local browser canvas host.
+- `tldraw_canvas_scene` — compact semantic canvas view; falls back to saved snapshots.
 - `tldraw_canvas_state` — inspect live canvas state and optionally save it.
 - `tldraw_canvas_exec` — execute JavaScript against the live tldraw editor.
 - `tldraw_search` — inspect the tldraw Editor API via the MCP search tool.

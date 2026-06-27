@@ -8,7 +8,7 @@ import {
 	listCanvasSnapshots,
 	loadCanvasSnapshot,
 	saveCanvasSnapshot,
-} from './project-store'
+} from '../src/store/project-store'
 
 let dirs: string[] = []
 
