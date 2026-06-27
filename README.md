@@ -73,7 +73,6 @@ pi-tldraw/
 ├── static/app-bridge-bundle.js
 ├── static/host.html
 ├── package.json             # Pi package metadata
-├── PUBLISHING.md            # Maintainer publishing checklist
 └── tsconfig.json
 ```
 
@@ -150,17 +149,4 @@ npm run check
 npm run pack:dry
 ```
 
-Keep logic that does not need Pi APIs in separate modules, such as `project-store.ts`, so it can be unit-tested without mocking Pi.
-
-## Publishing
-
-See [PUBLISHING.md](./PUBLISHING.md). The short version:
-
-```bash
-npm run check
-npm pack --dry-run
-npm login
-npm publish
-```
-
-The package includes the `pi-package` keyword so it can be discovered by the Pi package gallery after npm publication.
+Keep logic that does not need Pi APIs in separate modules, such as `src/store/project-store.ts`, so it can be unit-tested without mocking Pi.

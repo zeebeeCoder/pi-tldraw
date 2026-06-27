@@ -29,7 +29,6 @@
     "static/",
     "mcp-app/",
     "README.md",
-    "PUBLISHING.md",
     "tsconfig.json",
     "LICENSE"
   ],
