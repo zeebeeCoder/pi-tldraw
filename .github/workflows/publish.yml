@@ -22,4 +22,5 @@ jobs:
       - run: npm run build
       - run: npm run check
       - run: git diff --exit-code -- static/app-bridge-bundle.js static/app-bridge-bundle.meta.json
+      - run: npm run verify:package
       - run: npm publish --provenance

@@ -47,8 +47,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test && npm run verify:bundle && npm run verify:mcp-app && npm run verify:mcp-app-source",
-    "pack:dry": "npm run build && npm pack --dry-run",
+    "check": "npm run typecheck && npm test && npm run verify:bundle && npm run verify:mcp-app && npm run verify:mcp-app-source && npm run verify:package",
+    "pack:dry": "npm run build && npm run verify:package",
     "prepublishOnly": "npm run build && npm run check",
     "build:bridge": "node scripts/build-bridge.mjs",
     "build": "npm run build:bridge",
@@ -58,7 +58,8 @@
     "verify:mcp-app": "node scripts/verify-mcp-app.mjs",
     "e2e:packaged-mcp-app": "node scripts/e2e-packaged-mcp-app.mjs",
     "assemble:mcp-app:pinned": "node scripts/assemble-mcp-app.mjs --pinned",
-    "verify:mcp-app-source": "node scripts/verify-mcp-app-source.mjs"
+    "verify:mcp-app-source": "node scripts/verify-mcp-app-source.mjs",
+    "verify:package": "node scripts/verify-package-files.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
