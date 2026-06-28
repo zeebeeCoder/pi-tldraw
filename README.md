@@ -119,6 +119,8 @@ You should not need a manual save during normal use.
 ## Agent tools
 
 - `tldraw_canvas_open` — open/restore the local browser canvas host.
+- `tldraw_diagram_tips` — get minimalist drawing guidance before creating or revising a diagram.
+- `tldraw_canvas_export` — export the current selection or whole canvas as a PNG/SVG image for visual feedback.
 - `tldraw_canvas_scene` — compact semantic canvas view; falls back to saved snapshots.
 - `tldraw_canvas_state` — inspect live canvas state and optionally save it.
 - `tldraw_canvas_exec` — execute JavaScript against the live tldraw editor.

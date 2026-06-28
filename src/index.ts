@@ -10,6 +10,12 @@ import {
 	summarizeSnapshot,
 	toRawCanvasState,
 } from './canvas/state'
+import {
+	buildCanvasExportCode,
+	formatBytes,
+	parseCanvasExportPayload,
+	parseDataUrl,
+} from './canvas/export'
 import { createCanvasWorkflows } from './canvas/workflow'
 import { createCanvasHost } from './host/local-host'
 import { TldrawMcpClient, type McpTool } from './mcp/client'
@@ -27,6 +33,7 @@ import {
 	saveCanvasSnapshot,
 	setCurrentCanvasId as setStoredCurrentCanvasId,
 } from './store/project-store'
+import { saveCanvasImageExport } from './store/export-store'
 import { createMcpServerManager } from './server/server-manager'
 import {
 	buildTensor,
@@ -37,6 +44,7 @@ import {
 } from './semantic/layer'
 import { parseTldrawCommand } from './commands/tldraw-command'
 import { createTldrawStatusIndicator } from './ui/tldraw-status'
+import { buildDiagramGuidance } from './diagram/guidance'
 
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:8787/mcp'
 const CANVAS_RESOURCE_URI = 'ui://show-canvas/mcp-app.html'
@@ -206,6 +214,138 @@ export default function (pi: ExtensionAPI) {
 	})
 
 	pi.registerTool({
+		name: 'tldraw_diagram_tips',
+		label: 'tldraw Diagram Tips',
+		description:
+			'Return minimalist drawing guidance for spacious, readable tldraw diagrams: negative space, legibility, alignment, connection routing, and visual restraint.',
+		promptSnippet: 'Get minimalist drawing guidance before creating or revising a tldraw diagram.',
+		promptGuidelines: [
+			'Use tldraw_diagram_tips before tldraw_canvas_exec when creating or significantly rearranging any non-trivial tldraw diagram.',
+			'Use tldraw_diagram_tips when a tldraw diagram looks cramped, has overlapping arrows, unclear hierarchy, or needs visual polish.',
+		],
+		parameters: Type.Object({
+			focus: Type.Optional(
+				Type.String({ description: 'Optional drawing concern to emphasize.' })
+			),
+		}),
+		async execute(_toolCallId, params) {
+			const guidance = buildDiagramGuidance(params)
+			return {
+				content: [{ type: 'text', text: guidance.text }],
+				details: { focus: guidance.focus },
+			}
+		},
+	})
+
+	pi.registerTool({
+		name: 'tldraw_canvas_export',
+		label: 'Export tldraw Canvas Image',
+		description:
+			'Export the current tldraw selection or whole canvas as an image through the live browser host. Returns PNG by default for immediate visual feedback; SVG is also supported.',
+		promptSnippet: 'Export the current tldraw selection or whole canvas as a PNG/SVG image for visual feedback.',
+		promptGuidelines: [
+			'Use tldraw_canvas_export after drawing or rearranging a diagram when visual appearance matters and the model needs immediate feedback.',
+			'Use tldraw_canvas_export with scope:"selected" when the user has selected the region of interest; use scope:"all" for the whole canvas.',
+			'tldraw_canvas_export requires a live browser canvas. If it fails because no browser is connected, open the canvas with tldraw_canvas_open first.',
+		],
+		parameters: Type.Object({
+			scope: Type.Optional(
+				Type.String({ description: 'selected | all. Defaults to selected; if nothing is selected, selected falls back to all.' })
+			),
+			format: Type.Optional(
+				Type.String({ description: 'png | svg. Defaults to png.' })
+			),
+			canvasId: Type.Optional(
+				Type.String({ description: 'Canvas ID to export. Omit to use the current project canvas.' })
+			),
+			open: Type.Optional(
+				Type.Boolean({ description: 'Whether to open/focus the local browser host before exporting. Defaults to true.' })
+			),
+			background: Type.Optional(
+				Type.Boolean({ description: 'Include a background in the export. Defaults to true.' })
+			),
+			padding: Type.Optional(
+				Type.Number({ description: 'Optional fixed export padding in pixels. Omit to let tldraw trim automatically.' })
+			),
+			scale: Type.Optional(
+				Type.Number({ description: 'Optional logical export scale.' })
+			),
+			pixelRatio: Type.Optional(
+				Type.Number({ description: 'Optional bitmap pixel ratio. Defaults to 1 to keep feedback images compact.' })
+			),
+			save: Type.Optional(
+				Type.Boolean({ description: 'Save a copy under .pi/tldraw-exports. Defaults to true.' })
+			),
+		}),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const cwd = ctx?.cwd ?? sessionCwd
+			await serverManager.ensure(signal)
+			let started: { url: string | null; port?: number | null; spawned?: boolean }
+			let canvasId: string | undefined
+			if (params.open === false) {
+				started = await canvasHost.ensureStarted(signal)
+				canvasId = await resolveCanvasId(cwd, params.canvasId)
+			} else {
+				const opened = await workflows.ensureBrowserAndRestore(cwd, params.canvasId, signal)
+				started = opened
+				canvasId = opened.resolvedId
+			}
+			if (!canvasHost.getStatus().browserConnected) {
+				throw new Error('No live browser canvas is connected. Use tldraw_canvas_open first, wait for Canvas ready, then export.')
+			}
+
+			const code = buildCanvasExportCode(params)
+			const result = (await canvasHost.execOnCanvas(
+				{ code, canvasId, timeoutMs: 60_000 },
+				signal
+			)) as McpToolResult
+			const returnedCanvasId = parseCanvasIdFromResult(result) ?? canvasId
+			if (returnedCanvasId) await rememberCanvasId(cwd, returnedCanvasId)
+
+			const payload = parseCanvasExportPayload(extractReturnValue(result))
+			const image = parseDataUrl(payload.dataUrl)
+			let savedPath: string | undefined
+			if (params.save !== false) {
+				savedPath = await saveCanvasImageExport(cwd, {
+					canvasId: returnedCanvasId,
+					format: payload.format,
+					scope: payload.scope,
+					data: image.data,
+				})
+			}
+
+			const fallbackText = payload.fallbackToAll ? ' Selection was empty, so exported the whole canvas.' : ''
+			const text = [
+				`Exported ${payload.exportedShapeIds.length} shape(s) as ${payload.format.toUpperCase()} (${payload.width}×${payload.height}, ${formatBytes(image.bytes)}).${fallbackText}`,
+				`Scope: ${payload.scope}. Canvas host: ${started.url}`,
+				savedPath ? `Saved: ${savedPath}` : 'Saved: no',
+			].join('\n')
+
+			return {
+				content: [
+					{ type: 'text', text },
+					{ type: 'image', data: image.data, mimeType: image.mimeType },
+				],
+				details: {
+					endpoint,
+					host: canvasHost.getStatus(),
+					canvasId: returnedCanvasId,
+					format: payload.format,
+					scope: payload.scope,
+					width: payload.width,
+					height: payload.height,
+					bytes: image.bytes,
+					mimeType: image.mimeType,
+					exportedShapeIds: payload.exportedShapeIds,
+					selectedCount: payload.selectedCount,
+					fallbackToAll: payload.fallbackToAll,
+					savedPath,
+				},
+			}
+		},
+	})
+
+	pi.registerTool({
 		name: 'tldraw_canvas_exec',
 		label: 'Execute on tldraw Canvas',
 		description:
@@ -213,6 +353,9 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: 'Draw or update a visible tldraw canvas through the local browser bridge.',
 		promptGuidelines: [
 			'Use tldraw_canvas_exec when the user asks to create a visible tldraw diagram from Pi.',
+			'Before creating or significantly rearranging a non-trivial diagram with tldraw_canvas_exec, call tldraw_diagram_tips and follow its drawing principles.',
+			'When laying out diagrams with tldraw_canvas_exec, add generous negative space: large gaps between nodes, roomy group padding, clear lanes, and no arrows or labels running through unrelated shapes.',
+			'After drawing with tldraw_canvas_exec, call tldraw_canvas_scene to review structure and fix cramped clusters, overlapping arrows, or ambiguous relationships before declaring the diagram done.',
 			'Shapes use the FOCUSED format with _type — NOT tldraw\'s internal types. Valid _type values: rectangle, ellipse, triangle, diamond, hexagon, pill, cloud, x-box, check-box, heart, pentagon, octagon, star, parallelogram-right, parallelogram-left, fat-arrow-right, fat-arrow-left, fat-arrow-up, fat-arrow-down, arrow, note, text, line, draw.',
 			'DO NOT use _type: "geo" — that is tldraw\'s internal type name. Use _type: "rectangle" instead.',
 			'Create shapes: editor.createShape({ _type: \'rectangle\', shapeId: \'box1\', x: 100, y: 100, w: 240, h: 120, text: \'Label\', color: \'blue\', fill: \'tint\' }).',
