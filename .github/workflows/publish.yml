@@ -3,6 +3,7 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,6 +24,11 @@ jobs:
       - run: npm run check
       - run: git diff --exit-code -- static/app-bridge-bundle.js static/app-bridge-bundle.meta.json
       - run: npm run verify:package
-      - run: npm publish --provenance
+      - name: Publish dry run
+        if: github.event_name == 'workflow_dispatch'
+        run: npm publish --dry-run
+      - name: Publish to npm
+        if: github.event_name == 'release'
+        run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
