@@ -18,6 +18,10 @@ interface PendingExec {
 }
 
 interface CanvasHostOptions {
+	/** Project working directory the canvases belong to. Shown in the host UI. */
+	cwd?: string
+	/** Directory where canvas snapshots are persisted. Shown in the host UI. */
+	canvasDir?: string
 	onAutoSave?(input: {
 		canvasId: string
 		state: { shapes?: unknown[]; assets?: unknown[]; bindings?: unknown[] }
@@ -49,6 +53,8 @@ export function createCanvasHost(
 	resourceUri: string,
 	opts: CanvasHostOptions = {}
 ) {
+	const cwd = opts.cwd
+	const canvasDir = opts.canvasDir
 	let server: Server | null = null
 	let url: string | null = null
 	let port: number | null = null
@@ -167,7 +173,7 @@ export function createCanvasHost(
 			const body = await readFile(path, 'utf8')
 			return send(res, 200, body, 'application/javascript; charset=utf-8')
 		},
-		config: (_req, res) => sendJson(res, { endpoint, resourceUri }),
+		config: (_req, res) => sendJson(res, { endpoint, resourceUri, cwd, canvasDir }),
 		status: (_req, res) => sendJson(res, getStatus()),
 		log: async (req, res) => {
 			const body = (await readJson(req)) as { level?: string; message?: string }

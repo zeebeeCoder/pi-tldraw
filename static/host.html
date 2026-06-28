@@ -8,6 +8,7 @@
 		html, body { margin: 0; height: 100%; font-family: Inter, system-ui, sans-serif; }
 		#bar { height: 36px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-bottom: 1px solid #ddd; background: #fafafa; font-size: 13px; }
 		#status { color: #555; }
+		#folder { color: #888; font-variant-numeric: tabular-nums; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 		#canvas { width: 100%; height: calc(100vh - 36px); border: 0; display: block; }
 		button { font: inherit; }
 	</style>
@@ -16,7 +17,7 @@
 	<div id="bar">
 		<strong>Pi tldraw MCP host</strong>
 		<span id="status">Starting…</span>
-		<button id="demo">Run demo</button>
+		<span id="folder" title=""></span>
 	</div>
 	<iframe id="canvas" allow="clipboard-write; fullscreen"></iframe>
 	<script src="/static/app-bridge-bundle.js"></script>
@@ -24,6 +25,7 @@
 		const { AppBridge, PostMessageTransport } = window.McpAppsBridge
 
 		const statusEl = document.getElementById('status')
+		const folderEl = document.getElementById('folder')
 		const iframe = document.getElementById('canvas')
 		let bridge = null
 		let ready = false
@@ -35,10 +37,24 @@
 		// The tldraw MCP app initializes its React state to inline and only switches
 		// when it receives an onhostcontextchanged notification.
 		let displayMode = 'inline'
+		// Theme is owned by the host and persisted in localStorage so the user's
+		// choice (made via the tldraw settings menu) survives reloads. The tldraw
+		// app's onhostcontextchanged handler overrides its own color preference with
+		// hostContext.theme, so we send the persisted value ONCE at init and then stay
+		// hands-off — we never push a theme change mid-session, which would clobber
+		// the user's live settings-menu toggle. We only WATCH the iframe so we can
+		// remember the choice for next time.
+		let theme = (() => { try { return localStorage.getItem('pi-tldraw-theme-v2') === 'dark' ? 'dark' : 'light' } catch { return 'light' } })()
+
+		function persistTheme(next) {
+			if (next !== 'dark' && next !== 'light' || next === theme) return
+			theme = next
+			try { localStorage.setItem('pi-tldraw-theme-v2', theme) } catch {}
+		}
 
 		function getHostContext() {
 			return {
-				theme: 'light',
+				theme,
 				displayMode,
 				availableDisplayModes: ['inline', 'fullscreen'],
 				platform: 'desktop',
@@ -137,8 +153,40 @@
 			throw new Error('Timed out waiting for tldraw iframe to initialize')
 		}
 
+		// Detect theme changes made inside the tldraw app (its own dark-mode menu)
+		// and persist them so they survive reloads. The app doesn't call back to the
+		// host on theme change, so we infer it from the iframe's effective background.
+		function detectIframeTheme() {
+			try {
+				const doc = iframe.contentDocument
+				if (!doc) return null
+				const el = doc.documentElement
+				const bg = getComputedStyle(el).backgroundColor || getComputedStyle(doc.body).backgroundColor
+				const m = bg.match(/\d+(?:\.\d+)?/g)
+				if (!m) return null
+				const [r, g, b] = m.map(Number)
+				const luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+				return luminance < 128 ? 'dark' : 'light'
+			} catch { return null }
+		}
+
+		function startThemeSync() {
+			// Watch only: remember the user's settings-menu choice for the next open.
+			// Never push a hostContext change here — that would override the user's
+			// live toggle (the app's onhostcontextchanged forces colorScheme = our theme).
+			setInterval(() => {
+				if (!ready) return
+				const detected = detectIframeTheme()
+				if (detected) persistTheme(detected)
+			}, 1500)
+		}
+
 		async function init() {
 			const config = await (await fetch('/api/config')).json()
+			if (config.canvasDir) {
+				folderEl.textContent = '📁 ' + config.canvasDir
+				folderEl.title = config.canvasDir + (config.cwd ? '\ncwd: ' + config.cwd : '')
+			}
 			setStatus('Connecting to MCP…')
 			const client = new McpHttpClient(config.endpoint)
 			await client.initialize()
@@ -176,6 +224,7 @@
 				setTimeout(sendFullscreenContext, 500)
 				setTimeout(sendFullscreenContext, 1000)
 				setStatus('Canvas ready')
+				startThemeSync()
 			}
 			bridge.onsizechange = () => {}
 			bridge.oncalltool = (params) => client.request('tools/call', params)
@@ -333,12 +382,6 @@
 					await delay(1000)
 				}
 			}
-		}
-
-		document.getElementById('demo').onclick = async () => {
-			await fetch('/api/result', { method: 'POST', body: '{}' }).catch(() => {})
-			const demoCode = "editor.createShape({ _type: 'rectangle', shapeId: 'pi', x: 120, y: 120, w: 280, h: 140, text: 'Pi extension', color: 'blue', fill: 'tint' });\neditor.createShape({ _type: 'rectangle', shapeId: 'canvas', x: 520, y: 120, w: 280, h: 140, text: 'tldraw canvas', color: 'green', fill: 'tint' });\ncreateArrowBetweenShapes('pi', 'canvas', { text: 'exec code' });"
-			await runExec(new McpHttpClient((await (await fetch('/api/config')).json()).endpoint), { id: crypto.randomUUID(), code: demoCode })
 		}
 
 		init().catch((error) => { console.error(error); setStatus('Error: ' + error.message) })

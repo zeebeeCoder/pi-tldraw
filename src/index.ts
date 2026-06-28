@@ -73,6 +73,8 @@ export default function (pi: ExtensionAPI) {
 
 	const statusIndicator = createTldrawStatusIndicator()
 	const canvasHost = createCanvasHost(pi, endpoint, CANVAS_RESOURCE_URI, {
+		cwd: sessionCwd,
+		canvasDir: getCanvasDir(sessionCwd),
 		async onAutoSave({
 			canvasId,
 			state,
