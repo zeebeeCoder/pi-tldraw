@@ -1,0 +1,36 @@
+{
+  "repo": "https://github.com/tldraw/tldraw.git",
+  "commit": "4b0cfc539e074217e1e248461afa596fc7d02040",
+  "appPath": "apps/mcp-app",
+  "patches": [
+    "patches/tldraw-mcp-app/001-pi-runtime.patch"
+  ],
+  "build": [
+    {
+      "cwd": ".",
+      "command": "yarn install --immutable"
+    },
+    {
+      "cwd": "apps/mcp-app",
+      "command": "yarn build"
+    }
+  ],
+  "assembledFiles": [
+    "LICENSE.md",
+    "README.md",
+    "package.json",
+    "server.json",
+    "tsconfig.json",
+    "vite.config.ts",
+    "wrangler.toml",
+    "dev-tunnel.sh",
+    "src/",
+    "scripts/",
+    "plugins/",
+    "dist/"
+  ],
+  "notes": [
+    "The bundled mcp-app/ keeps the existing runtime contract: cd mcp-app && yarn dev.",
+    "The patch preserves Pi autosave of assets/bindings and iframe fullscreen sizing fixes."
+  ]
+}

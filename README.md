@@ -168,16 +168,27 @@ npm run pack:dry
 
 The bridge bundle is intentionally prebuilt for users, but maintainers build it from source with `npm run build:bridge`. CI rebuilds it and fails if the committed artifact drifts from source.
 
-The packaged MCP app is assembled from a built tldraw checkout:
+The packaged MCP app is assembled from a built tldraw checkout and records OSS provenance in `mcp-app/PI_TLDRAW_PROVENANCE.json`:
 
 ```bash
 # source checkout must already have apps/mcp-app/dist/* built
 export TLDRAW_MCP_APP_SOURCE_DIR=/path/to/tldraw/apps/mcp-app
 npm run assemble:mcp-app
 npm run verify:mcp-app
+npm run verify:mcp-app-source
 ```
 
+The source contract is declared in `mcp-app-source.json`: upstream tldraw repo, pinned commit, app path, build commands, and patch files under `patches/tldraw-mcp-app/`. The current packaged app is traceable to that pinned source plus `patches/tldraw-mcp-app/001-pi-runtime.patch`.
+
 The packaged `mcp-app/` keeps the same runtime contract as before (`cd mcp-app && yarn dev`) but uses prebuilt `dist/` assets so users do not rebuild tldraw during install/startup.
+
+For maintainers who want to rebuild from the pinned upstream source directly:
+
+```bash
+npm run assemble:mcp-app:pinned
+```
+
+This clones the pinned tldraw commit, applies declared patches, runs the manifest build commands, and assembles `mcp-app/`.
 
 Release checklist:
 
@@ -185,6 +196,7 @@ Release checklist:
 npm ci
 export TLDRAW_MCP_APP_SOURCE_DIR=/path/to/tldraw/apps/mcp-app
 npm run assemble:mcp-app
+npm run verify:mcp-app-source
 npm run build
 npm run check
 npm run e2e:packaged-mcp-app

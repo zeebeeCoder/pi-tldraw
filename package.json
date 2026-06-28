@@ -32,7 +32,9 @@
     "mcp-app/",
     "README.md",
     "tsconfig.json",
-    "LICENSE"
+    "LICENSE",
+    "mcp-app-source.json",
+    "patches/"
   ],
   "engines": {
     "node": ">=22.19.0"
@@ -45,7 +47,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test && npm run verify:bundle && npm run verify:mcp-app",
+    "check": "npm run typecheck && npm test && npm run verify:bundle && npm run verify:mcp-app && npm run verify:mcp-app-source",
     "pack:dry": "npm run build && npm pack --dry-run",
     "prepublishOnly": "npm run build && npm run check",
     "build:bridge": "node scripts/build-bridge.mjs",
@@ -54,7 +56,9 @@
     "e2e:mcp": "node scripts/e2e-mcp.mjs",
     "assemble:mcp-app": "node scripts/assemble-mcp-app.mjs",
     "verify:mcp-app": "node scripts/verify-mcp-app.mjs",
-    "e2e:packaged-mcp-app": "node scripts/e2e-packaged-mcp-app.mjs"
+    "e2e:packaged-mcp-app": "node scripts/e2e-packaged-mcp-app.mjs",
+    "assemble:mcp-app:pinned": "node scripts/assemble-mcp-app.mjs --pinned",
+    "verify:mcp-app-source": "node scripts/verify-mcp-app-source.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -1,0 +1,35 @@
+diff --git a/apps/mcp-app/src/widget/mcp-app.css b/apps/mcp-app/src/widget/mcp-app.css
+index 03f10d198..1bc9271bb 100644
+--- a/apps/mcp-app/src/widget/mcp-app.css
++++ b/apps/mcp-app/src/widget/mcp-app.css
+@@ -80,6 +80,8 @@
+ 	position: fixed;
+ 	inset: 0;
+ 	z-index: 9999;
++	height: 100%;
++	min-height: 0;
+ 	background: var(--tl-color-background);
+ }
+ 
+diff --git a/apps/mcp-app/src/widget/persistence.ts b/apps/mcp-app/src/widget/persistence.ts
+index a65d1cb14..feb5244f7 100644
+--- a/apps/mcp-app/src/widget/persistence.ts
++++ b/apps/mcp-app/src/widget/persistence.ts
+@@ -259,6 +259,8 @@ export function pushCanvasContext(app: App, editor: Editor, opts?: { message?: s
+ 	const shapes = [...editor.getCurrentPageShapes()].map((shape) =>
+ 		convertTldrawShapeToFocusedShape(editor, shape)
+ 	)
++	const assets = [...editor.getAssets()].map((asset) => structuredClone(asset))
++	const bindings = getEditorBindings(editor)
+ 
+ 	const canvasStatus = shapes.length > 0 ? `Current canvas state is attached.` : 'Canvas is empty.'
+ 
+@@ -268,6 +270,8 @@ export function pushCanvasContext(app: App, editor: Editor, opts?: { message?: s
+ 		content: [{ type: 'text', text }],
+ 		structuredContent: {
+ 			shapes,
++			assets,
++			bindings,
+ 		},
+ 	})
+ }
