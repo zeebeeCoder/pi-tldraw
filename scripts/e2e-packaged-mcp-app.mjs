@@ -27,6 +27,17 @@ function run(command, args, opts = {}) {
 	})
 }
 
+function waitForExit(child, timeoutMs = 5000) {
+	if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
+	return new Promise((resolve) => {
+		const timer = setTimeout(resolve, timeoutMs)
+		child.once('exit', () => {
+			clearTimeout(timer)
+			resolve()
+		})
+	})
+}
+
 async function waitForOptions(url, child) {
 	for (let i = 0; i < 120; i++) {
 		if (child.exitCode !== null) throw new Error(`packaged mcp-app exited with ${child.exitCode}`)
@@ -59,8 +70,10 @@ try {
 	})
 } finally {
 	try {
-		process.kill(-app.pid, 'SIGTERM')
+		if (app.pid) process.kill(-app.pid, 'SIGTERM')
+		else app.kill('SIGTERM')
 	} catch {
 		app.kill('SIGTERM')
 	}
+	await waitForExit(app)
 }
