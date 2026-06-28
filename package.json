@@ -26,6 +26,8 @@
   ],
   "files": [
     "src/",
+    "bridge/",
+    "scripts/",
     "static/",
     "mcp-app/",
     "README.md",
@@ -43,12 +45,20 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test",
-    "pack:dry": "npm pack --dry-run",
-    "prepublishOnly": "npm run check"
+    "check": "npm run typecheck && npm test && npm run verify:bundle && npm run verify:mcp-app",
+    "pack:dry": "npm run build && npm pack --dry-run",
+    "prepublishOnly": "npm run build && npm run check",
+    "build:bridge": "node scripts/build-bridge.mjs",
+    "build": "npm run build:bridge",
+    "verify:bundle": "node scripts/verify-bundle.mjs",
+    "e2e:mcp": "node scripts/e2e-mcp.mjs",
+    "assemble:mcp-app": "node scripts/assemble-mcp-app.mjs",
+    "verify:mcp-app": "node scripts/verify-mcp-app.mjs",
+    "e2e:packaged-mcp-app": "node scripts/e2e-packaged-mcp-app.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "esbuild": "^0.28.1",
     "typebox": "*",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
@@ -64,5 +74,12 @@
   "bugs": {
     "url": "https://github.com/zeebeeCoder/pi-tldraw/issues"
   },
-  "homepage": "https://github.com/zeebeeCoder/pi-tldraw#readme"
+  "homepage": "https://github.com/zeebeeCoder/pi-tldraw#readme",
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "agents": "^0.5.0",
+    "wrangler": "4.75.0",
+    "zod": "^4.4.3"
+  }
 }

@@ -15,5 +15,7 @@ jobs:
           node-version: '22.19.0'
           cache: npm
       - run: npm ci
+      - run: npm run build
       - run: npm run check
+      - run: git diff --exit-code -- static/app-bridge-bundle.js static/app-bridge-bundle.meta.json
       - run: npm pack --dry-run

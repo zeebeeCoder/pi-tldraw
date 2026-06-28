@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+.pi/
+*.log
+.DS_Store
+.env
+.env.*
+mcp-app/.wrangler/
+mcp-app/node_modules/

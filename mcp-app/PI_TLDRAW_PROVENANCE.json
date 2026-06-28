@@ -1,0 +1,14 @@
+{
+  "artifact": "mcp-app/",
+  "builder": "scripts/assemble-mcp-app.mjs",
+  "sourceDir": "/Users/zbigniewsiwiec/code/github/tldraw/apps/mcp-app",
+  "sourceGitRoot": "/Users/zbigniewsiwiec/code/github/tldraw",
+  "sourceGitCommit": "4b0cfc539e074217e1e248461afa596fc7d02040",
+  "sourceGitStatus": "M apps/mcp-app/src/widget/mcp-app.css\n M apps/mcp-app/src/widget/persistence.ts",
+  "dist": {
+    "mcp-app.html": "24af4cfaef84460f172dec501803960bf161f2faeab9c5eff8c6b0b3ace83c67",
+    "editor-api.json": "7298c0069c700f4b5db94a31ab3fbf742a64dc97442cf93f63616ab029153620",
+    "method-map.json": "e060b2860d245d07bddd9f2ad41398dd733328eba48234058854ac03f1bb828e"
+  },
+  "assembledAt": "2026-06-28T16:19:47.939Z"
+}
