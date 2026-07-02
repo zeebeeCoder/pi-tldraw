@@ -1,104 +1,42 @@
 # pi-tldraw
 
-A Pi extension that opens a local tldraw MCP canvas, lets the agent inspect/edit it, and persists canvas snapshots per project folder.
+[![npm version](https://img.shields.io/npm/v/pi-tldraw?logo=npm&color=cb3837)](https://www.npmjs.com/package/pi-tldraw)
+[![CI](https://github.com/zeebeeCoder/pi-tldraw/actions/workflows/ci.yml/badge.svg)](https://github.com/zeebeeCoder/pi-tldraw/actions/workflows/ci.yml)
+[![Publish](https://github.com/zeebeeCoder/pi-tldraw/actions/workflows/publish.yml/badge.svg)](https://github.com/zeebeeCoder/pi-tldraw/actions/workflows/publish.yml)
+[![Node](https://img.shields.io/node/v/pi-tldraw)](https://www.npmjs.com/package/pi-tldraw)
+[![License](https://img.shields.io/npm/l/pi-tldraw)](./LICENSE)
+[![Pi package](https://img.shields.io/badge/pi-package-7c3aed)](https://github.com/zeebeeCoder/pi-tldraw)
+[![Prebundled MCP app](https://img.shields.io/badge/tldraw%20MCP-prebundled-blue)](#development-and-release)
+
+**Draw with agents without the canvas cold start.**
+
+pi-tldraw packages the tldraw MCP app as a Pi extension so agents can open, inspect, edit, persist, resume, and export local tldraw canvases with minimal setup. It focuses on ergonomics for both sides of the loop: end users get a one-command canvas workspace, while agents get lean tools that compress complex drawings into semantic lenses instead of spending tokens on raw shape dumps.
+
+Use it for fast concept sketching, diagram generation, and iterative fine-tuning. The extension keeps the feature set intentionally small: multiple canvases per project folder, durable project snapshots, session resume, semantic canvas summaries, precise exec/edit tools, and PNG/SVG export.
 
 ## Install
-
-From npm:
 
 ```bash
 pi install npm:pi-tldraw
 ```
 
-Pinned:
+Pinned install:
 
 ```bash
 pi install npm:pi-tldraw@0.1.0
 ```
 
-Before the npm package is published, you can install from GitHub after a repo/tag exists:
-
-```bash
-pi install git:github.com/<github-owner>/pi-tldraw@v0.1.0
-```
-
-Or quick-run a local checkout without installing:
+Local checkout:
 
 ```bash
 pi -e .
 ```
 
-## Runtime requirement: tldraw MCP app
+Runtime: the extension talks to a local tldraw MCP endpoint at `http://127.0.0.1:8787/mcp`; the npm package ships a prebuilt `mcp-app/` and auto-starts it when needed, while advanced users can override with `TLDRAW_MCP_APP_DIR`, `TLDRAW_MCP_URL`, or `TLDRAW_MCP_AUTO_START=false`.
 
-The extension talks to a tldraw MCP server at:
+## How it works
 
-```text
-http://127.0.0.1:8787/mcp
-```
-
-If that endpoint is not reachable and the endpoint is local, the extension tries to auto-start a local tldraw MCP app. Auto-start uses:
-
-1. `TLDRAW_MCP_APP_DIR`, if set.
-2. `./mcp-app` at the package root, if present in the installed package.
-
-For a development checkout of tldraw:
-
-```bash
-export TLDRAW_MCP_APP_DIR=/path/to/tldraw/apps/mcp-app
-```
-
-If you prefer to run the MCP server yourself, start it separately and disable auto-start:
-
-```bash
-export TLDRAW_MCP_AUTO_START=false
-```
-
-The browser-side MCP Apps bridge is different: it is built from source in this repository and shipped as `static/app-bridge-bundle.js`.
-
-## Extension shape
-
-This is a testable Pi extension package:
-
-```text
-pi-tldraw/
-├── src/
-│   ├── index.ts             # Pi extension entry point / registration shell
-│   ├── canvas/              # pure canvas state helpers + workflows
-│   ├── commands/            # pure slash-command parsing
-│   ├── host/                # local browser host adapter
-│   ├── mcp/                 # MCP HTTP client + response parsing
-│   ├── semantic/            # pure canvas semantic rendering layer
-│   ├── server/              # local MCP server lifecycle adapter
-│   ├── store/               # project snapshot persistence
-│   └── ui/                  # Pi status widget adapter
-├── test/                    # pure helper/workflow/unit tests
-├── bridge/                   # source for the browser-side MCP Apps bridge bundle
-├── scripts/                  # reproducible build / verification / local e2e helpers
-├── static/app-bridge-bundle.js
-├── static/app-bridge-bundle.meta.json
-├── static/host.html
-├── mcp-app/                 # packaged tldraw MCP app runtime when release assembly provides it
-├── package.json             # Pi package metadata
-└── tsconfig.json
-```
-
-Pi discovers the extension via:
-
-```json
-{
-  "pi": {
-    "extensions": ["./src/index.ts"]
-  }
-}
-```
-
-## Build and release contract
-
-- Users installing from npm should receive prebuilt browser assets; they should not compile the bridge during `pi install`.
-- Maintainers build the bridge in CI from the source under `bridge/` before publishing.
-- The npm tarball includes both source (`bridge/`, `scripts/`) and the generated artifact (`static/app-bridge-bundle.js`, `static/app-bridge-bundle.meta.json`).
-- Git installs work from tagged commits because the generated static artifact is committed and verified by CI.
-- The runtime contract remains the same: the extension auto-starts a local `mcp-app/` when the release package contains it, or uses `TLDRAW_MCP_APP_DIR` / a manually started server.
+pi-tldraw builds on the tldraw MCP app and adds the Pi extension shape around it: a local browser host, typed agent tools, project-scoped snapshot persistence, semantic scene rendering, and export helpers. The key agent affordance is `tldraw_canvas_scene`, which turns canvas state into a compact graph/scene view so the model can quickly understand large diagrams before editing them.
 
 ## Normal UX
 
@@ -169,66 +107,23 @@ Safety rules:
 - Forced empty overwrite is available with `/tldraw save!`.
 - Previous snapshots are copied to `.pi/tldraw-canvases/history/<canvasId>/` before overwrite.
 
-## Development
+## Development and release
 
 ```bash
 npm install
-npm run build       # builds static/app-bridge-bundle.js from bridge/app-bridge-entry.js
-npm run check
-npm run pack:dry
-```
-
-The bridge bundle is intentionally prebuilt for users, but maintainers build it from source with `npm run build:bridge`. CI rebuilds it and fails if the committed artifact drifts from source.
-
-The packaged MCP app is assembled from a built tldraw checkout and records OSS provenance in `mcp-app/PI_TLDRAW_PROVENANCE.json`:
-
-```bash
-# source checkout must already have apps/mcp-app/dist/* built
-export TLDRAW_MCP_APP_SOURCE_DIR=/path/to/tldraw/apps/mcp-app
-npm run assemble:mcp-app
-npm run verify:mcp-app
-npm run verify:mcp-app-source
-```
-
-The source contract is declared in `mcp-app-source.json`: upstream tldraw repo, pinned commit, app path, build commands, and patch files under `patches/tldraw-mcp-app/`. The current packaged app is traceable to that pinned source plus `patches/tldraw-mcp-app/001-pi-runtime.patch`.
-
-The packaged `mcp-app/` keeps the same runtime contract as before (`cd mcp-app && yarn dev`) but uses prebuilt `dist/` assets so users do not rebuild tldraw during install/startup.
-
-For maintainers who want to rebuild from the pinned upstream source directly:
-
-```bash
-npm run assemble:mcp-app:pinned
-```
-
-This clones the pinned tldraw commit, applies declared patches, runs the manifest build commands, and assembles `mcp-app/`.
-
-Release checklist:
-
-```bash
-npm ci
-export TLDRAW_MCP_APP_SOURCE_DIR=/path/to/tldraw/apps/mcp-app
-npm run assemble:mcp-app
-npm run verify:mcp-app-source
 npm run build
 npm run check
-npm run e2e:packaged-mcp-app
 npm run pack:dry
 ```
 
-GitHub Actions runs the same build/check path before publishing with npm provenance.
+Development stays source-owned but release-friendly: the browser bridge is rebuilt from `bridge/app-bridge-entry.js`, while the packaged `mcp-app/` ships prebuilt `dist/` assets so users do not rebuild tldraw during install or startup. Provenance for the packaged MCP app lives in `mcp-app-source.json`, `patches/tldraw-mcp-app/`, and `mcp-app/PI_TLDRAW_PROVENANCE.json`.
 
-To smoke-test against a running tldraw MCP server:
-
-```bash
-# optional: defaults to http://127.0.0.1:8787/mcp
-export TLDRAW_MCP_URL=http://127.0.0.1:8787/mcp
-npm run e2e:mcp
-```
-
-To smoke-test the packaged MCP app itself on a temporary port:
+Useful maintainer checks:
 
 ```bash
+npm run verify:mcp-app-source
+npm run verify:package
 npm run e2e:packaged-mcp-app
 ```
 
-Keep logic that does not need Pi APIs in separate modules, such as `src/store/project-store.ts`, so it can be unit-tested without mocking Pi.
+GitHub Actions verifies build drift, package contents, tests, and provenance before publishing with npm provenance.
