@@ -34,7 +34,8 @@
     "tsconfig.json",
     "LICENSE",
     "mcp-app-source.json",
-    "patches/"
+    "patches/",
+    "docs/assets/"
   ],
   "engines": {
     "node": ">=22.19.0"

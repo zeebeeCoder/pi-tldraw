@@ -38,6 +38,21 @@ Runtime: the extension talks to a local tldraw MCP endpoint at `http://127.0.0.1
 
 pi-tldraw builds on the tldraw MCP app and adds the Pi extension shape around it: a local browser host, typed agent tools, project-scoped snapshot persistence, semantic scene rendering, and export helpers. The key agent affordance is `tldraw_canvas_scene`, which turns canvas state into a compact graph/scene view so the model can quickly understand large diagrams before editing them.
 
+## Canvas workflow
+
+![Collaborative canvas iteration protocol](docs/assets/agent-canvas-protocol.png)
+
+A typical canvas session is a tight loop:
+
+1. **Open** — start or resume a canvas with `/tldraw open [canvasId]`.
+2. **Draw** — let the agent create the first pass with spacious shapes, arrows, and labels.
+3. **Sense** — use semantic scene summaries and image exports instead of raw shape dumps.
+4. **Review** — identify overlaps, ambiguous arrows, missing labels, or cramped clusters.
+5. **Patch** — ask for small move/resize/relabel/reroute edits and re-sense the canvas.
+6. **Save/export** — persist the project snapshot and export PNG/SVG artifacts when the diagram is legible.
+
+This keeps the human workflow visual while giving agents a low-token feedback loop for understanding and refining complex canvases.
+
 ## Normal UX
 
 Start or restore the current project canvas:
