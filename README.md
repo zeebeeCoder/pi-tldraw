@@ -40,9 +40,9 @@ pi-tldraw builds on the tldraw MCP app and adds the Pi extension shape around it
 
 ## Canvas workspace
 
-![Minimal canvas bootstrap](docs/assets/minimal-canvas-bootstrap.png)
+![Shared visual context for a project](docs/assets/minimal-canvas-bootstrap.png)
 
-pi-tldraw does not prescribe a diagramming process. It gives you a local tldraw canvas for the current project and lets AI help only when useful: seed a first sketch, summarize what is on the canvas, make a small edit, or export an artifact.
+pi-tldraw gives each project a local tldraw canvas that can act as shared visual context. You can sketch directly in the browser; the agent can use the same canvas to seed ideas, inspect what is there, make targeted edits, or export an artifact.
 
 Minimal use:
 
@@ -50,7 +50,23 @@ Minimal use:
 /tldraw open [canvasId]
 ```
 
-From there, the canvas is yours: sketch, organize, revise, discuss, or ignore the agent entirely. Project snapshots are persisted automatically, and PNG/SVG export is available when you want to share the result.
+The important bridge is the semantic layer: `tldraw_canvas_scene` turns the drawing into a compact graph/scene summary, so the agent can reason about visual context without loading every raw shape. Project snapshots are persisted automatically, and PNG/SVG export is available when you want to share the result.
+
+## One-prompt CLI drawing
+
+You can also ask Pi to draw from a single CLI prompt. JSON mode streams tool calls and results to stdout, so another process or orchestration agent can watch the drawing loop as telemetry.
+
+```bash
+pi -e . --approve --mode json -p \
+  --session-id crazy-simple-drawer-test \
+  --no-builtin-tools \
+  --tools tldraw_canvas_open,tldraw_diagram_tips,tldraw_canvas_exec,tldraw_canvas_scene,tldraw_canvas_export \
+  'Draw a crazy but simple diagram: a rocket-powered octopus juggling three planets while a tiny robot takes notes. Iterate once, export PNG, and report the path.'
+```
+
+Example output from that exact workflow:
+
+![Rocket octopus juggling planets while a tiny robot takes notes](docs/assets/crazy-simple-test.png)
 
 ## Normal UX
 
