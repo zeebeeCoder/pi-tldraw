@@ -22,18 +22,25 @@ export type ParsedTldrawCommand = {
 }
 
 const COMMANDS: ReadonlySet<string> = new Set(TLDRAW_COMMAND_TYPES)
+const COMMAND_ALIASES: Readonly<Record<string, TldrawCommandType>> = {
+	ls: 'canvases',
+	list: 'canvases',
+	new: 'open',
+	use: 'open',
+}
 
 export function parseTldrawCommand(args: string): ParsedTldrawCommand {
 	const parts = args.trim().split(/\s+/).filter(Boolean)
 	const rawAction = parts[0] ?? 'status'
 	const force = rawAction.endsWith('!') || parts.includes('--force')
-	const normalizedAction = rawAction.endsWith('!') ? rawAction.slice(0, -1) : rawAction
+	const action = rawAction.endsWith('!') ? rawAction.slice(0, -1) : rawAction
+	const normalizedAction = COMMAND_ALIASES[action] ?? action
 	const canvasId = parts.slice(1).find((part) => !part.startsWith('--'))
 
 	return isTldrawCommandType(normalizedAction)
 		? withOptionalCanvasId({ type: normalizedAction, force }, canvasId)
 		: withOptionalCanvasId(
-			{ type: 'status', force, requestedAction: normalizedAction },
+			{ type: 'status', force, requestedAction: action },
 			canvasId
 		)
 }

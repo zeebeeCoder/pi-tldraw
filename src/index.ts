@@ -622,7 +622,7 @@ export default function (pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand('tldraw', {
-		description: 'Inspect/control tldraw MCP (/tldraw status|start|restart|tools|resource|open [canvasId]|save|canvases|current|host|reset).',
+		description: 'Inspect/control tldraw MCP (/tldraw open|new|use [canvasId]|save|ls|list|canvases|current|host|status|reset).',
 		handler: async (args, ctx) => {
 			const command = parseTldrawCommand(args)
 			const clearStatus = () => ctx.ui.setStatus('tldraw', undefined)

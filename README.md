@@ -121,6 +121,10 @@ You should not need a manual save during normal use.
 
 ```text
 /tldraw open [canvasId]      # Open/restore canvas; creates one if needed
+/tldraw new <canvasId>       # Alias for open; memorable when starting a canvas
+/tldraw use <canvasId>       # Alias for open; memorable when switching canvases
+/tldraw ls                   # Alias for canvases; list saved project canvases
+/tldraw list                 # Alias for canvases
 /tldraw host                 # Show host/server/autosave diagnostics
 /tldraw canvases             # List saved project canvases
 /tldraw current              # Show current project canvas id
@@ -128,6 +132,14 @@ You should not need a manual save during normal use.
 /tldraw save                 # Manual checkpoint; refuses unsafe blank overwrite
 /tldraw save!                # Force manual empty overwrite
 /tldraw reset                # Reset MCP HTTP session
+```
+
+Short normal workflow:
+
+```text
+/tldraw save
+/tldraw new design-v2
+/tldraw ls
 ```
 
 ## Agent tools

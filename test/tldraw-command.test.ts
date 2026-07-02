@@ -19,6 +19,21 @@ describe('tldraw command parser', () => {
 		})
 	})
 
+	it('supports short canvas workflow aliases', () => {
+		expect(parseTldrawCommand('ls')).toEqual({ type: 'canvases', force: false })
+		expect(parseTldrawCommand('list')).toEqual({ type: 'canvases', force: false })
+		expect(parseTldrawCommand('new canvas-b')).toEqual({
+			type: 'open',
+			force: false,
+			canvasId: 'canvas-b',
+		})
+		expect(parseTldrawCommand('use canvas-a')).toEqual({
+			type: 'open',
+			force: false,
+			canvasId: 'canvas-a',
+		})
+	})
+
 	it('falls back unknown actions to status without discarding evidence', () => {
 		expect(parseTldrawCommand('wat canvas-a')).toEqual({
 			type: 'status',
