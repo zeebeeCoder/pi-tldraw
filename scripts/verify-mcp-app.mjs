@@ -35,4 +35,9 @@ if (!html.includes('<html') && !html.includes('<!doctype html')) {
 	throw new Error('Packaged mcp-app dist/mcp-app.html does not look like HTML')
 }
 
+const generated = await readFile(resolve(appDir, 'dist/editor-api.json'), 'utf8')
+if (/\/Users\/|\/home\/|\/private\/var\/|[A-Za-z]:\\\\Users\\\\/.test(generated)) {
+	throw new Error('Packaged mcp-app dist/editor-api.json contains an absolute local path')
+}
+
 console.log('packaged mcp-app verified')

@@ -465,7 +465,7 @@
     {
       "name": "bindingUtils",
       "kind": "property",
-      "signature": "{ readonly [x: string]: BindingUtil<import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>; }",
+      "signature": "{ readonly [x: string]: BindingUtil<import(\"@tldraw/tlschema\").TLArrowBinding>; }",
       "description": "A map of shape utility classes (TLShapeUtils) by shape type.",
       "params": [],
       "examples": [],
@@ -2929,7 +2929,7 @@
     {
       "name": "getBindingsFromShape",
       "kind": "method",
-      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(shape: TLShape | string, type: Binding[\"type\"]): Binding[]; }",
+      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(shape: TLShape | string, type: Binding[\"type\"]): Binding[]; }",
       "description": "Get all bindings of a certain type _from_ a particular shape. These are the bindings whose\n`fromId` matched the shape's ID.",
       "params": [],
       "examples": [],
@@ -2938,7 +2938,7 @@
     {
       "name": "getBindingsFromShape",
       "kind": "method",
-      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(shape: TLShape | string, type: Binding[\"type\"]): Binding[]; }",
+      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(shape: TLShape | string, type: Binding[\"type\"]): Binding[]; }",
       "description": "",
       "params": [],
       "examples": [],
@@ -2947,7 +2947,7 @@
     {
       "name": "getBindingsToShape",
       "kind": "method",
-      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(shape: TLShape | string, type: Binding[\"type\"]): Binding[]; }",
+      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(shape: TLShape | string, type: Binding[\"type\"]): Binding[]; }",
       "description": "Get all bindings of a certain type _to_ a particular shape. These are the bindings whose\n`toId` matches the shape's ID.",
       "params": [],
       "examples": [],
@@ -2956,7 +2956,7 @@
     {
       "name": "getBindingsToShape",
       "kind": "method",
-      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(shape: TLShape | string, type: Binding[\"type\"]): Binding[]; }",
+      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(shape: TLShape | string, type: Binding[\"type\"]): Binding[]; }",
       "description": "",
       "params": [],
       "examples": [],
@@ -2965,7 +2965,7 @@
     {
       "name": "getBindingsInvolvingShape",
       "kind": "method",
-      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(shape: TLShape | string, type?: Binding[\"type\"]): Binding[]; }",
+      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(shape: TLShape | string, type?: Binding[\"type\"]): Binding[]; }",
       "description": "Get all bindings involving a particular shape. This includes bindings where the shape is the\n`fromId` or `toId`. If a type is provided, only bindings of that type are returned.",
       "params": [],
       "examples": [],
@@ -2974,7 +2974,7 @@
     {
       "name": "getBindingsInvolvingShape",
       "kind": "method",
-      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(shape: TLShape | string, type?: Binding[\"type\"]): Binding[]; }",
+      "signature": "{ <K extends TLBinding[\"type\"]>(shape: TLShape | string, type: K): Extract<TLBinding, { type: K; }>[]; <Binding extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(shape: TLShape | string, type?: Binding[\"type\"]): Binding[]; }",
       "description": "",
       "params": [],
       "examples": [],
@@ -2983,7 +2983,7 @@
     {
       "name": "createBindings",
       "kind": "method",
-      "signature": "<B extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(partials: TLBindingCreate<B>[]) => this",
+      "signature": "<B extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(partials: TLBindingCreate<B>[]) => this",
       "description": "Create bindings from a list of partial bindings. You can omit the ID and most props of a\nbinding, but the `type`, `toId`, and `fromId` must all be provided.",
       "params": [],
       "examples": [],
@@ -2992,7 +2992,7 @@
     {
       "name": "createBinding",
       "kind": "method",
-      "signature": "<B extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(partial: TLBindingCreate<B>) => this",
+      "signature": "<B extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(partial: TLBindingCreate<B>) => this",
       "description": "Create a single binding from a partial. You can omit the ID and most props of a binding, but\nthe `type`, `toId`, and `fromId` must all be provided.",
       "params": [],
       "examples": [],
@@ -3010,7 +3010,7 @@
     {
       "name": "updateBinding",
       "kind": "method",
-      "signature": "<B extends TLBinding = import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/tlschema/.tsbuild/index\").TLArrowBinding>(partial: TLBindingUpdate<B>) => this",
+      "signature": "<B extends TLBinding = import(\"@tldraw/tlschema\").TLArrowBinding>(partial: TLBindingUpdate<B>) => this",
       "description": "Update a binding from a partial binding. Each partial must include an ID, which will be used\nto match the binding to it's existing record. If there is no existing record, that binding is\nskipped. The changes from the partial are merged into the existing record.",
       "params": [],
       "examples": [],
@@ -3774,7 +3774,7 @@
     {
       "name": "externalAssetContentHandlers",
       "kind": "property",
-      "signature": "{ file: (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLFileExternalAsset & { type: \"file\"; }) => Promise<TLAsset | undefined>; url: (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLUrlExternalAsset & { type: \"url\"; }) => Promise<TLAsset | undefined>; }",
+      "signature": "{ file: (info: import(\"@tldraw/editor\").TLFileExternalAsset & { type: \"file\"; }) => Promise<TLAsset | undefined>; url: (info: import(\"@tldraw/editor\").TLUrlExternalAsset & { type: \"url\"; }) => Promise<TLAsset | undefined>; }",
       "description": "",
       "params": [],
       "examples": [],
@@ -3864,7 +3864,7 @@
     {
       "name": "externalContentHandlers",
       "kind": "property",
-      "signature": "{ embed: (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLEmbedExternalContent<any>) => void; text: (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLTextExternalContent) => void; url: (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLUrlExternalContent) => void; files: (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLFilesExternalContent) => void; \"file-replace\": (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLFileReplaceExternalContent) => void; \"svg-text\": (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLSvgTextExternalContent) => void; tldraw: (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLTldrawExternalContent) => void; excalidraw: (info: import(\"/Users/zbigniewsiwiec/code/github/tldraw/packages/editor/.tsbuild/lib/editor/types/external-content\").TLExcalidrawExternalContent) => void; }",
+      "signature": "{ embed: (info: import(\"@tldraw/editor\").TLEmbedExternalContent<any>) => void; text: (info: import(\"@tldraw/editor\").TLTextExternalContent) => void; url: (info: import(\"@tldraw/editor\").TLUrlExternalContent) => void; files: (info: import(\"@tldraw/editor\").TLFilesExternalContent) => void; \"file-replace\": (info: import(\"@tldraw/editor\").TLFileReplaceExternalContent) => void; \"svg-text\": (info: import(\"@tldraw/editor\").TLSvgTextExternalContent) => void; tldraw: (info: import(\"@tldraw/editor\").TLTldrawExternalContent) => void; excalidraw: (info: import(\"@tldraw/editor\").TLExcalidrawExternalContent) => void; }",
       "description": "",
       "params": [],
       "examples": [],

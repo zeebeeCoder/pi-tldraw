@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 
 const required = [
 	'bridge/app-bridge-entry.js',
@@ -45,6 +46,21 @@ if (missing.length > 0) {
 const forbidden = [...files].filter((path) => forbiddenPrefixes.some((prefix) => path.startsWith(prefix)))
 if (forbidden.length > 0) {
 	throw new Error(`Package tarball contains forbidden file(s):\n${forbidden.join('\n')}`)
+}
+
+const binaryExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico'])
+const localPathPattern = /\/Users\/|\/home\/|\/private\/var\/|[A-Za-z]:\\\\Users\\\\/
+const localPathLeaks = [...files].filter((path) => {
+	const lower = path.toLowerCase()
+	if ([...binaryExtensions].some((extension) => lower.endsWith(extension))) return false
+	try {
+		return localPathPattern.test(readFileSync(path, 'utf8'))
+	} catch {
+		return false
+	}
+})
+if (localPathLeaks.length > 0) {
+	throw new Error(`Package tarball contains absolute local path(s):\n${localPathLeaks.join('\n')}`)
 }
 
 console.log(`package files verified (${files.size} files)`)

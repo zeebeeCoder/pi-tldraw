@@ -37,6 +37,14 @@ async function readText(path) {
 	return readFile(path, 'utf8')
 }
 
+async function sanitizeGeneratedEditorApi() {
+	const editorApiPath = resolve(targetDir, 'dist/editor-api.json')
+	let body = await readText(editorApiPath)
+	body = body.replaceAll(/\/[^"\\]*\/tldraw\/packages\/([^/]+)\/\.tsbuild(?:\/lib)?\/[^"\\]+/g, '@tldraw/$1')
+	body = body.replaceAll(/[A-Za-z]:\\\\[^"\\]+/g, '<local-path>')
+	await writeFile(editorApiPath, body, 'utf8')
+}
+
 function run(command, commandArgs, opts = {}) {
 	const result = spawnSync(command, commandArgs, { encoding: 'utf8', stdio: 'pipe', ...opts })
 	if (result.status !== 0) {
@@ -156,6 +164,7 @@ pkg.scripts = {
 	build: 'node -e "const fs=require(\'fs\'); for (const f of [\'dist/mcp-app.html\',\'dist/editor-api.json\',\'dist/method-map.json\']) if (!fs.existsSync(f)) throw new Error(`Missing ${f}`); console.log(\'prebuilt mcp-app dist is present\')"',
 }
 await writeFile(pkgPath, `${JSON.stringify(pkg, null, '\t')}\n`, 'utf8')
+await sanitizeGeneratedEditorApi()
 
 const gitRoot = findGitRoot(sourceDir)
 const patches = await patchMetadata()
