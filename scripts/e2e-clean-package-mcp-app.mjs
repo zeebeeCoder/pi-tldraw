@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const npmEnv = { ...process.env, npm_config_dry_run: 'false' }
 
 async function getFreePort() {
 	return new Promise((resolve, reject) => {
@@ -77,7 +78,7 @@ try {
 	const pack = spawnSync(
 		'npm',
 		['pack', '--ignore-scripts', '--json', '--pack-destination', tempDir],
-		{ cwd: root, encoding: 'utf8' },
+		{ cwd: root, encoding: 'utf8', env: npmEnv },
 	)
 	if (pack.status !== 0) {
 		throw new Error(`npm pack failed\n${pack.stdout}\n${pack.stderr}`)
@@ -95,7 +96,7 @@ try {
 	await run(
 		'npm',
 		['install', '--legacy-peer-deps', '--no-audit', '--no-fund', tarball],
-		{ cwd: installDir },
+		{ cwd: installDir, env: npmEnv },
 	)
 
 	const packageDir = join(installDir, 'node_modules', 'pi-tldraw')
