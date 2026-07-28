@@ -1,6 +1,6 @@
 {
   "name": "pi-tldraw",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "description": "Pi extension that opens and persists a local tldraw MCP canvas.",
   "license": "MIT",
