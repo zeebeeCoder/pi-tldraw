@@ -48,7 +48,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test && npm run verify:bundle && npm run verify:mcp-app && npm run verify:mcp-app-source && npm run verify:package",
+    "check": "npm run typecheck && npm test && npm run verify:bundle && npm run verify:mcp-app && npm run verify:mcp-app-source && npm run verify:package && npm run e2e:clean-package",
     "pack:dry": "npm run build && npm run verify:package",
     "prepublishOnly": "npm run build && npm run check",
     "build:bridge": "node scripts/build-bridge.mjs",
@@ -60,7 +60,8 @@
     "e2e:packaged-mcp-app": "node scripts/e2e-packaged-mcp-app.mjs",
     "assemble:mcp-app:pinned": "node scripts/assemble-mcp-app.mjs --pinned",
     "verify:mcp-app-source": "node scripts/verify-mcp-app-source.mjs",
-    "verify:package": "node scripts/verify-package-files.mjs"
+    "verify:package": "node scripts/verify-package-files.mjs",
+    "e2e:clean-package": "node scripts/e2e-clean-package-mcp-app.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -85,6 +86,7 @@
     "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "agents": "^0.5.0",
+    "ai": "^6.0.0",
     "wrangler": "4.75.0",
     "zod": "^4.4.3"
   }
