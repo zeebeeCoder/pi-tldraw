@@ -60,7 +60,7 @@ You can also ask Pi to draw from a single CLI prompt. JSON mode streams tool cal
 pi -e . --approve --mode json -p \
   --session-id crazy-simple-drawer-test \
   --no-builtin-tools \
-  --tools tldraw_canvas_open,tldraw_diagram_tips,tldraw_canvas_exec,tldraw_canvas_scene,tldraw_canvas_export \
+  --tools tldraw_canvas_open,tldraw_diagram_tips,tldraw_canvas_exec,tldraw_canvas_layout,tldraw_canvas_scene,tldraw_canvas_export \
   'Draw a crazy but simple diagram: a rocket-powered octopus juggling three planets while a tiny robot takes notes. Iterate once, export PNG, and report the path.'
 ```
 
@@ -117,6 +117,7 @@ Short normal workflow:
 - `tldraw_canvas_export` — export the current selection or whole canvas as a PNG/SVG image for visual feedback.
 - `tldraw_canvas_scene` — compact semantic canvas view; falls back to saved snapshots.
 - `tldraw_canvas_state` — inspect live canvas state and optionally save it.
+- `tldraw_canvas_layout` — deterministically arrange selected/supplied shapes horizontally, vertically, or as a grid while preserving unrelated diagram structure and connector negative space.
 - `tldraw_canvas_exec` — execute JavaScript against the live tldraw editor.
 - `tldraw_search` — inspect the tldraw Editor API via the MCP search tool.
 - `tldraw_status` — check MCP server tools/resources.

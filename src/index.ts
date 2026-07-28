@@ -16,6 +16,11 @@ import {
 	parseCanvasExportPayload,
 	parseDataUrl,
 } from './canvas/export'
+import {
+	buildCanvasLayoutCode,
+	formatCanvasLayoutSummary,
+	parseCanvasLayoutResult,
+} from './canvas/layout'
 import { createCanvasWorkflows } from './canvas/workflow'
 import { createCanvasHost } from './host/local-host'
 import { TldrawMcpClient, type McpTool } from './mcp/client'
@@ -235,6 +240,110 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: 'text', text: guidance.text }],
 				details: { focus: guidance.focus },
+			}
+		},
+	})
+
+	pi.registerTool({
+		name: 'tldraw_canvas_layout',
+		label: 'Layout tldraw Selection',
+		description:
+			'Deterministically arrange the current tldraw selection or an explicit subset of shapes as a horizontal row, vertical column, or grid. This is selection-scoped: unrelated diagram structure is never reorganized. Preserves connectors, locked/grouped shapes, negative space, and verifies overlap removal; supports dry runs.',
+		promptSnippet:
+			'Arrange selected or specified tldraw shapes horizontally, vertically, or as a grid with deterministic gaps and padding.',
+		promptGuidelines: [
+			'Use tldraw_canvas_layout instead of tldraw_canvas_exec when the task is to arrange a few existing boxes into a horizontal, vertical, or grid layout.',
+			'The tool is selection-scoped by default and must never be used as a whole-canvas auto-layout; diagrams usually encode graph, sequence, and process semantics that should remain untouched.',
+			'Pass shapeIds explicitly when the user names a subset; otherwise the current tldraw selection is used. Only selected or supplied eligible shapes move.',
+			'Use gap and padding to preserve negative space so arrows and labels remain readable. Connectors are preserved as relationships, not treated as layout siblings.',
+			'Use dryRun:true to inspect proposed transforms without changing the canvas.',
+		],
+		parameters: Type.Object({
+			mode: Type.String({ description: 'Layout mode: horizontal | vertical | grid.' }),
+			shapeIds: Type.Optional(
+				Type.Array(Type.String(), {
+					description: 'Optional explicit shape IDs to arrange. Omit to use the current tldraw selection.',
+				})
+			),
+			gap: Type.Optional(
+				Type.Number({ description: 'Gap between sibling shapes in pixels. Defaults to 64.' })
+			),
+			padding: Type.Optional(
+				Type.Number({ description: 'Outer padding around the arranged subset in pixels. Defaults to 0.' })
+			),
+			columns: Type.Optional(
+				Type.Integer({ description: 'Grid column count. Defaults to a near-square grid.' })
+			),
+			align: Type.Optional(
+				Type.String({ description: 'Cross-axis alignment: start | center | end. Defaults to center.' })
+			),
+			anchor: Type.Optional(
+				Type.String({ description: 'What to preserve: center | top-left | first. Defaults to center.' })
+			),
+			ordering: Type.Optional(
+				Type.String({ description: 'Shape ordering: spatial | explicit | reading. Defaults to spatial.' })
+			),
+			dryRun: Type.Optional(
+				Type.Boolean({ description: 'Calculate and report transforms without moving shapes. Defaults to false.' })
+			),
+			canvasId: Type.Optional(
+				Type.String({ description: 'Canvas ID to edit. Omit to use the current project canvas.' })
+			),
+			open: Type.Optional(
+				Type.Boolean({ description: 'Whether to open/focus the local browser host before laying out. Defaults to true.' })
+			),
+		}),
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const cwd = ctx?.cwd ?? sessionCwd
+			await serverManager.ensure(signal)
+			let started: { url: string | null; port?: number | null; spawned?: boolean }
+			let canvasId: string | undefined
+			if (params.open === false) {
+				started = await canvasHost.ensureStarted(signal)
+				canvasId = await resolveCanvasId(cwd, params.canvasId)
+			} else {
+				const opened = await workflows.ensureBrowserAndRestore(cwd, params.canvasId, signal)
+				started = opened
+				canvasId = opened.resolvedId
+			}
+			if (!canvasHost.getStatus().browserConnected) {
+				throw new Error('No live browser canvas is connected. Use tldraw_canvas_open first, wait for Canvas ready, then lay out.')
+			}
+
+			const code = buildCanvasLayoutCode(params)
+			const result = (await canvasHost.execOnCanvas(
+				{ code, canvasId },
+				signal
+			)) as McpToolResult
+			const returnedCanvasId = parseCanvasIdFromResult(result) ?? canvasId
+			if (returnedCanvasId) await rememberCanvasId(cwd, returnedCanvasId)
+			const layout = parseCanvasLayoutResult(extractReturnValue(result))
+			const summary = formatCanvasLayoutSummary(layout)
+			if (!layout.ok) throw new Error(`${layout.error ?? 'Canvas layout failed.'}\n${summary}`)
+
+			let saveText = 'Dry run: project snapshot unchanged.'
+			if (!layout.dryRun && returnedCanvasId) {
+				try {
+					const snapshot = await workflows.snapshotLiveCanvas(cwd, returnedCanvasId, signal)
+					saveText = `Saved project snapshot ${snapshot.canvasId} to ${getCanvasDir(cwd)} (${summarizeSnapshot(snapshot)}).`
+				} catch (error) {
+					saveText = `Could not save project snapshot: ${error instanceof Error ? error.message : String(error)}`
+				}
+			}
+
+			return {
+				content: [
+					{
+						type: 'text',
+						text: `${summary}\nCanvas host: ${started.url}\n${saveText}`,
+					},
+				],
+				details: {
+					endpoint,
+					host: canvasHost.getStatus(),
+					canvasId: returnedCanvasId,
+					layout,
+				},
 			}
 		},
 	})
